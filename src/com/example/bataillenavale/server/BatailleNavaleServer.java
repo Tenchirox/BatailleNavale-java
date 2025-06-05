@@ -143,20 +143,6 @@ public class BatailleNavaleServer {
         }
     }
 
-    // ... (Le reste des méthodes : startLobbyCountdown, cancelLobbyCountdown,
-    // prepareAndStartGameWithReadyPlayers, handleAdminStartGame, passerAuPlacementSuivant,
-    // handlePlacementNavire, informerTourCombat, handleTir, handleClientQuitte,
-    // handleChatMessage, resetServerForNewLobby, broadcast, broadcastToPlayersInGame,
-    // broadcastToAllParticipants, broadcastSaufAUnJoueurEnPartie, getClientHandlerByGlobalIndexInGame,
-    // nombreJoueursInitialDeLaPartie, broadcastLobbyState, main, et la classe ClientHandler
-    // restent identiques à la version précédente que je vous ai fournie,
-    // qui incluait déjà les corrections pour handlePlayerDisconnect dans BatailleNavaleGame)
-
-    // Copiez ici le reste du code de BatailleNavaleServer.java que j'ai fourni dans la réponse précédente.
-    // (Ce code est trop long pour être répété intégralement ici, mais il est essentiel que vous utilisiez
-    // la version qui appelle game.handlePlayerDisconnect() etc.)
-
-    // --- DEBUT DU CODE A REPRENDRE DE LA REPONSE PRECEDENTE ---
     private synchronized void startLobbyCountdown() {
         if (lobbyCountdownActive || gameInProgressFlag) {
             return;

@@ -27,9 +27,9 @@ public class BatailleNavaleClient extends JFrame {
         }
         public enum ShotResult { MANQUE, TOUCHE, COULE, DEJA_JOUE, ERREUR }
         public static final int TAILLE_GRILLE = 10;
-        public static final char OPP_UNKNOWN = '?'; public static final char OPP_MISS = 'O';
+        public static final char OPP_UNKNOWN = ' '; public static final char OPP_MISS = 'O';
         public static final char OPP_HIT = 'X'; public static final char OPP_SUNK = '!';
-        public static final char MY_EMPTY = '~'; public static final char MY_HIT_ON_ME = 'X';
+        public static final char MY_EMPTY = ' '; public static final char MY_HIT_ON_ME = 'X';
         public static final char MY_MISS_ON_ME = 'M';
     }
 
@@ -144,14 +144,12 @@ public class BatailleNavaleClient extends JFrame {
             if (serverCommunicator.isConnected()) {
                 serverCommunicator.sendMessage("QUIT_GAME");
             }
-            // La déconnexion et le retour à l'écran de connexion seront gérés par les callbacks du ServerCommunicator
         });
 
-        // Panneaux Chat et Log (utilisant les nouvelles classes UI)
         chatUI = new ChatUI();
         gameLogUI = new GameLogUI();
         chatUI.addSendButtonListener(e -> sendChatMessageAction());
-        chatUI.addInputFieldEnterListener(e -> sendChatMessageAction()); // Envoi sur Entrée
+        chatUI.addInputFieldEnterListener(e -> sendChatMessageAction()); 
 
         eastSidePanel = new JPanel(new GridLayout(2,1,5,5));
         eastSidePanel.add(chatUI);
@@ -160,11 +158,17 @@ public class BatailleNavaleClient extends JFrame {
     }
 
     private void sendChatMessageAction() {
-        String message = chatUI.getChatMessage(); // Récupère et vide le champ
+        String message = chatUI.getChatMessage(); 
         if (!message.isEmpty() && serverCommunicator.isConnected() && nameSuccessfullySetThisSession) {
             serverCommunicator.sendMessage("CHAT_MSG:" + message);
         } else if (!nameSuccessfullySetThisSession) {
             statusLabel.setText("Erreur: Définissez votre nom pour utiliser le chat.");
+            // Rappeler au joueur de se connecter/définir son nom si nécessaire
+            if (!serverCommunicator.isConnected() || connectionPanel.isVisible()) {
+                 JOptionPane.showMessageDialog(this, "Vous devez d'abord vous connecter et définir un nom pour utiliser le chat.", "Chat non disponible", JOptionPane.INFORMATION_MESSAGE);
+            }
+        } else if (!serverCommunicator.isConnected()) {
+             statusLabel.setText("Erreur: Non connecté au serveur.");
         }
     }
 
@@ -176,7 +180,7 @@ public class BatailleNavaleClient extends JFrame {
         if (tempPlayerName.isEmpty()) { statusLabel.setText("Votre nom ne peut pas être vide."); return; }
         if (tempPlayerName.length() > 15) { statusLabel.setText("Erreur: Le nom ne doit pas dépasser 15 caractères."); return; }
         
-        this.playerName = tempPlayerName; // Assigner après validation
+        this.playerName = tempPlayerName; 
 
         statusLabel.setText("Connexion à " + serverAddress + "...");
         connectButton.setEnabled(false);
@@ -187,40 +191,39 @@ public class BatailleNavaleClient extends JFrame {
         if (success) {
             statusLabel.setText("Connecté. Envoi du nom au serveur...");
             serverCommunicator.sendMessage("SET_NAME:" + this.playerName);
-            // nameSuccessfullySetThisSession sera mis à true par le serveur implicitement ou via un message
         } else {
-            // L'erreur est déjà affichée par le callback onConnectionError
             connectButton.setEnabled(true);
             serverIpField.setEditable(true);
             nameField.setEditable(true);
         }
     }
 
-    // Callback pour les messages bruts du serveur
     private void handleServerMessageRaw(String rawMessage) {
-        System.out.println("Serveur (brut): " + rawMessage); // Debug
+        System.out.println("Serveur (brut): " + rawMessage); 
         String[] parts = rawMessage.split(":", 2);
         String command = parts[0];
         String payload = (parts.length > 1) ? parts[1] : "";
-        processServerMessage(command, payload); // L'ancienne méthode de traitement
+        SwingUtilities.invokeLater(() -> processServerMessage(command, payload)); 
     }
 
-    // Callback pour la déconnexion
     private void handleServerDisconnect() {
-        statusLabel.setText("Déconnecté du serveur. Veuillez vous reconnecter.");
-        addGameLog("Déconnexion du serveur.");
-        resetClientStateForNewConnection();
-        switchToView("CONNECTION");
+        SwingUtilities.invokeLater(() -> { 
+            statusLabel.setText("Déconnecté du serveur. Veuillez vous reconnecter.");
+            addGameLog("Déconnexion du serveur.");
+            resetClientStateForNewConnection();
+            switchToView("CONNECTION");
+        });
     }
 
-    // Callback pour les erreurs de connexion initiales
     private void handleConnectionError(String message, Exception ex) {
-        statusLabel.setText("Erreur de connexion: " + message);
-        addGameLog("Erreur de connexion: " + message + (ex != null ? " (" + ex.getMessage() + ")" : ""));
-        connectButton.setEnabled(true);
-        serverIpField.setEditable(true);
-        nameField.setEditable(true);
-        nameSuccessfullySetThisSession = false;
+         SwingUtilities.invokeLater(() -> { 
+            statusLabel.setText("Erreur de connexion: " + message);
+            addGameLog("Erreur de connexion: " + message + (ex != null ? " (" + ex.getMessage() + ")" : ""));
+            connectButton.setEnabled(true);
+            serverIpField.setEditable(true);
+            nameField.setEditable(true);
+            nameSuccessfullySetThisSession = false;
+        });
     }
     
     private void resetClientStateForNewConnection() {
@@ -235,12 +238,10 @@ public class BatailleNavaleClient extends JFrame {
         gameGridsDisplayPanel = null;
         allPlayerNames.clear();
         currentShipToPlace = null;
-        // Les UI sont remises à zéro dans switchToView("CONNECTION")
     }
 
 
     private void switchToView(String viewName) {
-        // Cacher tous les panneaux principaux
         if (connectionPanel.getParent() == getContentPane()) getContentPane().remove(connectionPanel);
         if (mainGamePanel.getParent() == getContentPane()) getContentPane().remove(mainGamePanel);
 
@@ -259,27 +260,25 @@ public class BatailleNavaleClient extends JFrame {
                 if (connectButton != null) connectButton.setEnabled(true);
                 quitGameButton.setVisible(false); hostStartGameButton.setVisible(false);
                 
-                // Nettoyer l'état pour une nouvelle session de connexion
                 playerIndex = -1; inGame = false; placementPhase = false; amISpectator = false;
-                // nameSuccessfullySetThisSession est géré par la logique de connexion/déconnexion
                 if (gameLogUI != null) gameLogUI.clearLog();
                 if (chatUI != null) chatUI.clearChat();
                 break;
             case "LOBBY":
                 if (mainGamePanel.getParent() == null) add(mainGamePanel, BorderLayout.CENTER);
                 mainGamePanel.removeAll();
-                mainGamePanel.add(lobbyPanelContainer, BorderLayout.CENTER); // lobbyPanelContainer contient déjà le bouton quitter
+                mainGamePanel.add(lobbyPanelContainer, BorderLayout.CENTER); 
                 mainGamePanel.setVisible(true); lobbyPanelContainer.setVisible(true);
-                // Le bouton Quitter est global, il sera affiché si mainGamePanel est visible et configuré
                 quitGameButton.setText("Quitter le Lobby"); quitGameButton.setVisible(true);
                 eastSidePanel.setVisible(true);
+                JPanel bottomLobbyPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+                bottomLobbyPanel.add(quitGameButton);
+                mainGamePanel.add(bottomLobbyPanel, BorderLayout.SOUTH);
                 break;
             case "PLACEMENT":
             case "COMBAT":
             case "SPECTATOR":
                 if (mainGamePanel.getParent() == null) add(mainGamePanel, BorderLayout.CENTER);
-                // Le contenu de mainGamePanel (grilles, contrôles) est géré par
-                // switchToPlacementView ou switchToGameOrSpectatorView
                 mainGamePanel.setVisible(true);
                 quitGameButton.setText(amISpectator ? "Quitter (Spectateur)" : "Quitter la Partie");
                 quitGameButton.setVisible(true);
@@ -287,13 +286,7 @@ public class BatailleNavaleClient extends JFrame {
                 eastSidePanel.setVisible(true);
                 break;
         }
-        // Ajouter le bouton Quitter s'il est pertinent pour la vue (pas CONNECTION)
-        if (!viewName.equals("CONNECTION")) {
-            // Vérifier si mainGamePanel a un BorderLayout pour y ajouter le bouton Quitter en SOUTH
-            // Ou le laisser global et gérer sa visibilité.
-            // Pour l'instant, on le laisse global, il sera sous statusLabel.
-        }
-
+        
         getContentPane().revalidate();
         getContentPane().repaint();
     }
@@ -327,7 +320,7 @@ public class BatailleNavaleClient extends JFrame {
                 GridPanel pg = new GridPanel(ModelConstants.TAILLE_GRILLE, false, i); pg.setEnabled(false);
                 playerGridPanels.put(i, pg); spgv.add(new JScrollPane(pg), BorderLayout.CENTER); gameGridsDisplayPanel.add(spgv);
             }
-        } else { // Mode Joueur
+        } else { 
             myGridPanel = new GridPanel(ModelConstants.TAILLE_GRILLE, true, playerIndex);
             playerGridPanels.put(playerIndex, myGridPanel);
             JPanel myGC = new JPanel(new BorderLayout()); myGC.setBorder(BorderFactory.createTitledBorder(this.playerName + " (Votre Grille)"));
@@ -348,13 +341,13 @@ public class BatailleNavaleClient extends JFrame {
             gameGridsDisplayPanel.setLayout(new BorderLayout(10,10));
             gameGridsDisplayPanel.add(myGC, BorderLayout.WEST);
             if (numOpp > 0) gameGridsDisplayPanel.add(new JScrollPane(oppC), BorderLayout.CENTER);
-            else gameGridsDisplayPanel.add(new JPanel(), BorderLayout.CENTER);
+            else gameGridsDisplayPanel.add(new JPanel(), BorderLayout.CENTER); 
         }
     }
 
     private void switchToPlacementView() {
         placementPhase = true; inGame = true; amISpectator = false;
-        setupPlayerGridsForGameView(); // Crée/Recrée myGridPanel et gameGridsDisplayPanel
+        setupPlayerGridsForGameView(); 
 
         if (myGridPanel != null) { myGridPanel.setEnabled(true); myGridPanel.setPlacementMode(true); }
         for(Map.Entry<Integer, GridPanel> entry : playerGridPanels.entrySet()){
@@ -371,9 +364,13 @@ public class BatailleNavaleClient extends JFrame {
             if (myGridPanel.previewStartCell != null) myGridPanel.repaint(); }};
         horizontalRadioButton.addActionListener(ol); verticalRadioButton.addActionListener(ol);
 
+        JPanel bottomGamePanel = new JPanel(new BorderLayout());
+        bottomGamePanel.add(placementControlsPanel, BorderLayout.CENTER);
+        bottomGamePanel.add(quitGameButton, BorderLayout.EAST);
+
         mainGamePanel.removeAll();
         if (gameGridsDisplayPanel != null) mainGamePanel.add(new JScrollPane(gameGridsDisplayPanel), BorderLayout.CENTER);
-        mainGamePanel.add(placementControlsPanel, BorderLayout.SOUTH);
+        mainGamePanel.add(bottomGamePanel, BorderLayout.SOUTH);
         switchToView("PLACEMENT");
         statusLabel.setText("Phase de placement des navires."); quitGameButton.setText("Quitter la Partie");
     }
@@ -383,41 +380,47 @@ public class BatailleNavaleClient extends JFrame {
         JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT)); bottomPanel.add(quitGameButton);
 
         if (amISpectator) {
-            if (gameGridsDisplayPanel == null || playerGridPanels.isEmpty() || !mainGamePanel.isAncestorOf(gameGridsDisplayPanel) ) {
+            if (gameGridsDisplayPanel == null || playerGridPanels.isEmpty() || (gameGridsDisplayPanel != null && !mainGamePanel.isAncestorOf(gameGridsDisplayPanel)) ) {
                 setupPlayerGridsForGameView();
             }
             for(GridPanel pGrid : playerGridPanels.values()){ if (pGrid != null) { pGrid.setPlacementMode(false); pGrid.setEnabled(false);}}
             statusLabel.setText("Mode Spectateur - Phase de combat.");
-        } else { // Joueur
+        } else { 
             if (myGridPanel == null || !playerGridPanels.containsKey(playerIndex) || gameGridsDisplayPanel == null) {
                 System.err.println("ERREUR CRITIQUE: Grilles du joueur non initialisées pour la phase de combat!");
                 addGameLog("ERREUR CRITIQUE: Grilles non initialisées pour phase de combat."); statusLabel.setText("Erreur critique - Grilles non trouvées.");
                 return;
             }
-            myGridPanel.setPlacementMode(false); myGridPanel.setEnabled(false);
+            myGridPanel.setPlacementMode(false); myGridPanel.setEnabled(false); 
             for(Map.Entry<Integer, GridPanel> entry : playerGridPanels.entrySet()){
                 if (entry.getKey() != playerIndex) { GridPanel oppGrid = entry.getValue(); if (oppGrid != null) {
                     oppGrid.setPlacementMode(false); oppGrid.setEnabled(myTurn); }}
             }
-            statusLabel.setText("Phase de combat !");
+            statusLabel.setText(myTurn ? "Phase de combat - À vous de tirer !" : "Phase de combat - Attente de l'adversaire.");
         }
 
         mainGamePanel.removeAll();
         if (gameGridsDisplayPanel != null) mainGamePanel.add(new JScrollPane(gameGridsDisplayPanel), BorderLayout.CENTER);
         else { mainGamePanel.add(new JLabel("Erreur d'affichage des grilles."), BorderLayout.CENTER); }
-        mainGamePanel.add(bottomPanel, BorderLayout.SOUTH);
+        mainGamePanel.add(bottomPanel, BorderLayout.SOUTH); 
         switchToView(amISpectator ? "SPECTATOR" : "COMBAT");
         quitGameButton.setText(amISpectator ? "Quitter (Spectateur)" : "Quitter la Partie");
     }
+    
+    private void triggerClientNotification(boolean isUrgent) {
+        Toolkit.getDefaultToolkit().beep(); 
 
-    // La méthode processServerMessage reste globalement la même, mais utilisera
-    // chatUI.appendMessage(...) et gameLogUI.addLogEntry(...)
+        if (isUrgent && !this.isFocused()) {
+            this.toFront();
+            this.requestFocusInWindow();
+        }
+    }
+
     private void processServerMessage(String command, String payload) {
-        // ... (début de la méthode)
         switch (command) {
             case "REQ_NAME":
                 statusLabel.setText("Le serveur demande votre nom.");
-                gameLogUI.addLogEntry("Le serveur demande la saisie du nom."); // Modifié
+                gameLogUI.addLogEntry("Le serveur demande la saisie du nom.");
                 nameSuccessfullySetThisSession = false; playerIndex = -1; inGame = false; placementPhase = false; amISpectator = false;
                 switchToView("CONNECTION");
                 if (nameField != null) nameField.setEditable(true);
@@ -427,138 +430,286 @@ public class BatailleNavaleClient extends JFrame {
                 String[] lobbyData = payload.split(":", 4);
                 if (lobbyData.length >= 3) {
                     int namedPlayerCount = Integer.parseInt(lobbyData[0]);
-                    minPlayersToStartLobby = Integer.parseInt(lobbyData[1]);
+                    minPlayersToStartLobby = Integer.parseInt(lobbyData[1]); 
                     String playerNamesList = (lobbyData.length > 3) ? lobbyData[3] : "";
                     String lobbyText = "Joueurs prêts: " + namedPlayerCount + " (Min: " + minPlayersToStartLobby + ")\nNoms: " + (playerNamesList.isEmpty() ? "(aucun)" : playerNamesList);
                     String firstPlayerName = ""; boolean myNameConfirmed = false;
                     if(!playerNamesList.isEmpty()){ String[] names = playerNamesList.split(","); if (names.length > 0) firstPlayerName = names[0].trim();
-                        for(String n : names) if(n.trim().equals(this.playerName)) { myNameConfirmed = true; nameSuccessfullySetThisSession = true; break; }}
-                    if (!amISpectator) { if (myNameConfirmed || nameSuccessfullySetThisSession) switchToLobbyView(lobbyText, namedPlayerCount, minPlayersToStartLobby, firstPlayerName);
-                        else if (connectionPanel.isVisible()) statusLabel.setText("Lobby: " + namedPlayerCount + " joueurs. Connectez-vous.");
-                    } else gameLogUI.addLogEntry("Info Lobby (spectateur): " + lobbyText); // Modifié
-                } else { statusLabel.setText("Erreur: LOBBY_STATE malformé."); gameLogUI.addLogEntry("Erreur: LOBBY_STATE malformé: " + payload); } // Modifié
+                        for(String n : names) if(n.trim().equals(this.playerName)) { 
+                            myNameConfirmed = true; 
+                            nameSuccessfullySetThisSession = true; 
+                            break; 
+                        }
+                    }
+                    if (!amISpectator) { 
+                        if (myNameConfirmed) { // Si mon nom est dans la liste, je suis confirmé.
+                             if (!inGame) switchToLobbyView(lobbyText, namedPlayerCount, minPlayersToStartLobby, firstPlayerName);
+                        } else if (connectionPanel.isVisible()) { // Si pas confirmé et sur l'écran de connexion
+                             statusLabel.setText("Lobby: " + namedPlayerCount + " joueurs. Votre nom n'est pas encore confirmé par le serveur.");
+                        } else if (nameSuccessfullySetThisSession && !inGame) {
+                            // Nom était setté, mais n'est plus dans la liste (ex: kick? improbable ici) -> retour connexion.
+                            // Ou si on était dans le lobby et notre nom disparaît, on revient à la connexion.
+                            // Commentaire: Ce cas est moins probable avec la logique actuelle de reset.
+                            // serverCommunicator.sendMessage("REQ_NAME"); // Forcer REQ_NAME si on est dans un état invalide
+                            // Pour l'instant, on ne fait rien, on attend REQ_NAME du serveur.
+                        }
+                    } else { // Spectateur
+                        gameLogUI.addLogEntry("Info Lobby (spectateur): " + lobbyText); 
+                        // Si le spectateur vient de définir son nom et reçoit LOBBY_STATE avant SPECTATE_INFO, 
+                        // nameSuccessfullySetThisSession pourrait encore être false.
+                        // Il sera mis à true par SPECTATE_MODE.
+                    }
+                } else { statusLabel.setText("Erreur: LOBBY_STATE malformé."); gameLogUI.addLogEntry("Erreur: LOBBY_STATE malformé: " + payload); }
                 break;
             case "SPECTATE_MODE":
-                amISpectator = true; statusLabel.setText("Mode Spectateur activé..."); gameLogUI.addLogEntry("Activation du mode spectateur."); // Modifié
+                amISpectator = true;
+                nameSuccessfullySetThisSession = true; // MODIFICATION ICI: Spectateur a défini son nom
+                statusLabel.setText("Mode Spectateur activé..."); 
+                gameLogUI.addLogEntry("Activation du mode spectateur.");
+                // Si on était sur l'écran de connexion, il faut une transition.
+                // SPECTATE_INFO s'occupera de setup les grilles et d'appeler switchToGameOrSpectatorView.
                 break;
             case "SPECTATE_INFO":
-                if (!amISpectator) break; String[] si = payload.split(":", 3);
-                if(si.length >= 3) { totalPlayersInGame = Integer.parseInt(si[1]); String[] sn = si[2].split(","); allPlayerNames.clear();
+                if (!amISpectator) break; 
+                String[] si = payload.split(":", 3);
+                if(si.length >= 3) { 
+                    totalPlayersInGame = Integer.parseInt(si[1]); 
+                    String[] sn = si[2].split(","); allPlayerNames.clear();
                     for(int i=0; i < sn.length; i++) allPlayerNames.put(i, sn[i].trim());
-                    String sm = "Spectateur: " + totalPlayersInGame + " joueurs: " + si[2]; statusLabel.setText(sm); gameLogUI.addLogEntry(sm); // Modifié
-                    switchToGameOrSpectatorView();
-                } else { statusLabel.setText("Erreur: SPECTATE_INFO malformé."); gameLogUI.addLogEntry("Erreur: SPECTATE_INFO malformé: " + payload); } // Modifié
+                    String sm = "Spectateur: " + totalPlayersInGame + " joueurs: " + si[2]; statusLabel.setText(sm); gameLogUI.addLogEntry(sm);
+                    switchToGameOrSpectatorView(); 
+                } else { statusLabel.setText("Erreur: SPECTATE_INFO malformé."); gameLogUI.addLogEntry("Erreur: SPECTATE_INFO malformé: " + payload); }
                 break;
             case "GAME_START":
                 String[] gi = payload.split(":", 4);
-                if (gi.length >= 4) { playerIndex = Integer.parseInt(gi[1]); totalPlayersInGame = Integer.parseInt(gi[2]); String[] n = gi[3].split(","); allPlayerNames.clear();
-                    for(int i=0; i < n.length; i++) allPlayerNames.put(i, n[i].trim()); if (allPlayerNames.containsKey(playerIndex)) playerName = allPlayerNames.get(playerIndex);
-                    nameSuccessfullySetThisSession = true; amISpectator = false;
-                    String gsm = "Partie commence ! Vous: " + playerName + " (J" + playerIndex + "). Placement."; statusLabel.setText(gsm); gameLogUI.addLogEntry(gsm); // Modifié
+                if (gi.length >= 4) { 
+                    playerIndex = Integer.parseInt(gi[1]); 
+                    totalPlayersInGame = Integer.parseInt(gi[2]); 
+                    String[] n = gi[3].split(","); allPlayerNames.clear();
+                    for(int i=0; i < n.length; i++) allPlayerNames.put(i, n[i].trim()); 
+                    if (allPlayerNames.containsKey(playerIndex)) this.playerName = allPlayerNames.get(playerIndex); 
+                    nameSuccessfullySetThisSession = true; amISpectator = false; inGame = true;
+                    String gsm = "Partie commence ! Vous: " + this.playerName + " (J" + playerIndex + "). Placement."; statusLabel.setText(gsm); gameLogUI.addLogEntry(gsm);
                     switchToPlacementView();
-                } else { statusLabel.setText("Erreur: GAME_START malformé."); gameLogUI.addLogEntry("Erreur: GAME_START malformé: " + payload); } // Modifié
+                } else { statusLabel.setText("Erreur: GAME_START malformé."); gameLogUI.addLogEntry("Erreur: GAME_START malformé: " + payload); }
                 break;
             case "YOUR_TURN_PLACE_SHIP":
-                if (amISpectator) break; Toolkit.getDefaultToolkit().beep(); String[] shi = payload.split(":");
-                if (shi.length >= 3) { currentShipToPlace = ModelConstants.ShipType.valueOf(shi[0]); currentShipSize = Integer.parseInt(shi[1]); currentShipDisplayName = shi[2];
-                    if (shipToPlaceLabel != null) shipToPlaceLabel.setText("Placez: " + currentShipDisplayName + " (taille " + currentShipSize + ")");
-                    String ptm = allPlayerNames.getOrDefault(playerIndex, "Vous") + ", placez: " + currentShipDisplayName; statusLabel.setText(ptm); gameLogUI.addLogEntry("Placement: " + ptm); // Modifié
+                if (amISpectator) break;
+                String[] shi = payload.split(":");
+                if (shi.length >= 3) {
+                    currentShipToPlace = ModelConstants.ShipType.valueOf(shi[0]);
+                    String currentShipDisplayName = shi[2];
+                    if (shipToPlaceLabel != null) shipToPlaceLabel.setText("Placez: " + currentShipDisplayName + " (taille " + currentShipToPlace.getTaille() + ")");
+                    String ptm = allPlayerNames.getOrDefault(playerIndex, "Vous") + ", placez: " + currentShipDisplayName; statusLabel.setText(ptm); gameLogUI.addLogEntry("Placement: " + ptm);
                     if (myGridPanel != null) { myGridPanel.setEnabled(true); myGridPanel.setPlacementMode(true); myGridPanel.setCurrentShipForPlacement(currentShipToPlace, horizontalRadioButton.isSelected()); }
-                } else { statusLabel.setText("Erreur: YOUR_TURN_PLACE_SHIP malformé."); gameLogUI.addLogEntry("Erreur: YOUR_TURN_PLACE_SHIP malformé: " + payload); } // Modifié
+                    triggerClientNotification(true); 
+                } else { statusLabel.setText("Erreur: YOUR_TURN_PLACE_SHIP malformé."); gameLogUI.addLogEntry("Erreur: YOUR_TURN_PLACE_SHIP malformé: " + payload); }
                 break;
             case "WAIT_PLACEMENT":
-                 String wm; if (amISpectator) { String[] wsi = payload.split(":"); wm = (wsi.length >=2) ? "Spectateur: " + wsi[0] + " place " + wsi[1] : "Spectateur: Attente placement..."; statusLabel.setText(wm); gameLogUI.addLogEntry(wm); break; } // Modifié
-                 String[] wi = payload.split(":"); wm = (wi.length >= 2) ? "Attente: " + wi[0] + " place " + wi[1] : "Attente placement adversaire..."; statusLabel.setText(wm); gameLogUI.addLogEntry("Placement: " + wm); // Modifié
-                 if (myGridPanel != null) { myGridPanel.setEnabled(false); myGridPanel.setPlacementMode(false); }
+                 String wm; 
+                 if (amISpectator) { 
+                     String[] wsi = payload.split(":"); 
+                     wm = (wsi.length >=2) ? "Spectateur: " + wsi[0] + " place " + wsi[1] : "Spectateur: Attente placement..."; 
+                     statusLabel.setText(wm); gameLogUI.addLogEntry(wm); break; 
+                 }
+                 String[] wi = payload.split(":"); wm = (wi.length >= 2) ? "Attente: " + wi[0] + " place " + wi[1] : "Attente placement adversaire..."; 
+                 statusLabel.setText(wm); gameLogUI.addLogEntry("Placement: " + wm);
+                 if (myGridPanel != null) { myGridPanel.setEnabled(false); myGridPanel.setPlacementMode(false); } 
+                 currentShipToPlace = null; 
                  break;
             case "PLACEMENT_ACCEPTED":
-                 if (amISpectator) break; String[] ai = payload.split(":");
-                 if (ai.length >= 4) { ModelConstants.ShipType pt = ModelConstants.ShipType.valueOf(ai[0]); int pl = Integer.parseInt(ai[1]); int pc = Integer.parseInt(ai[2]); boolean ph = Boolean.parseBoolean(ai[3]);
+                 if (amISpectator) break; 
+                 String[] ai = payload.split(":", 4);
+                 if (ai.length >= 4) { 
+                    ModelConstants.ShipType pt = ModelConstants.ShipType.valueOf(ai[0]); 
+                    int pl = Integer.parseInt(ai[1]); int pc = Integer.parseInt(ai[2]); 
+                    boolean ph = Boolean.parseBoolean(ai[3]);
                     if (myGridPanel != null) myGridPanel.confirmShipPlacement(pt, pl, pc, ph);
-                    String pam = pt.getNom() + " placé par " + allPlayerNames.getOrDefault(playerIndex, "vous") + "."; statusLabel.setText(pam); gameLogUI.addLogEntry("Placement: " + pam); // Modifié
-                    currentShipToPlace = null; if(myGridPanel != null) myGridPanel.setPlacementMode(false);
-                 } else { statusLabel.setText("Erreur: PLACEMENT_ACCEPTED malformé."); gameLogUI.addLogEntry("Erreur: PLACEMENT_ACCEPTED malformé: " + payload); } // Modifié
+                    String pam = pt.getNom() + " placé par " + allPlayerNames.getOrDefault(playerIndex, "vous") + "."; 
+                    statusLabel.setText(pam); gameLogUI.addLogEntry("Placement: " + pam);
+                    currentShipToPlace = null; 
+                    if(myGridPanel != null) {
+                        myGridPanel.setPlacementMode(false); 
+                        myGridPanel.setCurrentShipForPlacement(null, horizontalRadioButton.isSelected()); 
+                        myGridPanel.setEnabled(false); 
+                    }
+                 } else { statusLabel.setText("Erreur: PLACEMENT_ACCEPTED malformé."); gameLogUI.addLogEntry("Erreur: PLACEMENT_ACCEPTED malformé: " + payload); }
                  break;
             case "PLACEMENT_REJECTED":
-                 if (amISpectator) break; String prm = "Placement de " + payload + " refusé par " + allPlayerNames.getOrDefault(playerIndex, "vous") + ". Réessayez."; statusLabel.setText(prm); gameLogUI.addLogEntry("Placement: " + prm); // Modifié
-                 if (myGridPanel != null && currentShipToPlace != null) { myGridPanel.setPlacementMode(true); myGridPanel.setCurrentShipForPlacement(currentShipToPlace, horizontalRadioButton.isSelected());}
+                 if (amISpectator) break; 
+                 String prm = "Placement de " + payload + " refusé. Réessayez."; statusLabel.setText(prm); gameLogUI.addLogEntry("Placement: " + prm);
+                 if (myGridPanel != null && currentShipToPlace != null) { 
+                    myGridPanel.setEnabled(true);
+                    myGridPanel.setPlacementMode(true); 
+                    myGridPanel.setCurrentShipForPlacement(currentShipToPlace, horizontalRadioButton.isSelected());
+                 }
                  break;
             case "ALL_SHIPS_PLACED":
-                statusLabel.setText("Navires placés. Début du combat !"); gameLogUI.addLogEntry("Navires placés. Phase de combat !"); // Modifié
+                statusLabel.setText("Tous les navires placés. Début du combat !"); gameLogUI.addLogEntry("Tous les navires placés. Phase de combat !");
+                placementPhase = false; 
+                currentShipToPlace = null;
+                if (placementControlsPanel != null) placementControlsPanel.setVisible(false);
                 switchToGameOrSpectatorView();
                 break;
             case "YOUR_TURN_FIRE":
-                if (amISpectator) break; Toolkit.getDefaultToolkit().beep(); myTurn = true;
-                String ftm = allPlayerNames.getOrDefault(playerIndex, "Vous") + ", à vous de tirer !"; statusLabel.setText(ftm); gameLogUI.addLogEntry("Combat: " + ftm); // Modifié
-                for(Map.Entry<Integer, GridPanel> entry : playerGridPanels.entrySet()){ if (entry.getKey() != playerIndex && entry.getValue() != null) entry.getValue().setEnabled(true);
-                    else if (entry.getValue() != null) entry.getValue().setEnabled(false); }
+                if (amISpectator) break; 
+                myTurn = true;
+                String ftm = allPlayerNames.getOrDefault(playerIndex, "Vous") + ", à vous de tirer !"; 
+                statusLabel.setText(ftm); gameLogUI.addLogEntry("Combat: " + ftm);
+                for(Map.Entry<Integer, GridPanel> entry : playerGridPanels.entrySet()){ 
+                    if (entry.getKey() != playerIndex && entry.getValue() != null) entry.getValue().setEnabled(true); 
+                    else if (entry.getKey() == playerIndex && entry.getValue() != null) entry.getValue().setEnabled(false); 
+                }
+                triggerClientNotification(true); 
                 break;
             case "OPPONENT_TURN_FIRE":
-                String otm = "Au tour de " + payload + " de tirer."; statusLabel.setText(otm); gameLogUI.addLogEntry("Combat: " + otm + (amISpectator ? " (Spectateur)" : "")); // Modifié
-                if (!amISpectator) { myTurn = false; for(Map.Entry<Integer, GridPanel> entry : playerGridPanels.entrySet()){ if (entry.getKey() != playerIndex && entry.getValue() != null) entry.getValue().setEnabled(false);}}
+                String oppNameTurn = payload;
+                String otm = "Au tour de " + oppNameTurn + " de tirer."; 
+                statusLabel.setText(otm); gameLogUI.addLogEntry("Combat: " + otm + (amISpectator ? " (Spectateur)" : ""));
+                if (!amISpectator) { 
+                    myTurn = false; 
+                    for(Map.Entry<Integer, GridPanel> entry : playerGridPanels.entrySet()){ 
+                        if (entry.getKey() != playerIndex && entry.getValue() != null) entry.getValue().setEnabled(false); 
+                    }
+                }
                 break;
             case "SHOT_RESULT":
                 String[] sd = payload.split(":", 6);
-                if (sd.length >= 5) { int ti = Integer.parseInt(sd[0]); int ci = Integer.parseInt(sd[1]); int l = Integer.parseInt(sd[2]); int c = Integer.parseInt(sd[3]); ModelConstants.ShotResult r = ModelConstants.ShotResult.valueOf(sd[4]);
-                    String nsc = (sd.length > 5 && !sd[5].equals("UNKNOWN_SHIP")) ? sd[5] : null; String tName = allPlayerNames.getOrDefault(ti, "J" + (ti+1)); String cName = allPlayerNames.getOrDefault(ci, "J" + (ci+1));
-                    GridPanel gtu = playerGridPanels.get(ci); if (gtu != null) gtu.markShot(l, c, r);
-                    String srm = "Tir de " + tName + " sur " + cName + " en " + (char)('A'+c) + (l+1) + " -> " + r + (nsc != null ? " (" + nsc + " COULÉ!)" : ""); statusLabel.setText(srm); gameLogUI.addLogEntry(srm); // Modifié
-                } else { statusLabel.setText("Erreur: SHOT_RESULT malformé."); gameLogUI.addLogEntry("Erreur: SHOT_RESULT malformé: " + payload); } // Modifié
+                if (sd.length >= 5) { 
+                    int shooterPlayerIndex = Integer.parseInt(sd[0]); 
+                    int targetPlayerIndex = Integer.parseInt(sd[1]);  
+                    int l = Integer.parseInt(sd[2]); int c = Integer.parseInt(sd[3]); 
+                    ModelConstants.ShotResult r = ModelConstants.ShotResult.valueOf(sd[4]);
+                    String sunkShipName = (sd.length > 5 && !sd[5].equals("UNKNOWN_SHIP")) ? sd[5] : null; 
+                    
+                    String shooterName = allPlayerNames.getOrDefault(shooterPlayerIndex, "J" + (shooterPlayerIndex+1)); 
+                    String targetName = allPlayerNames.getOrDefault(targetPlayerIndex, "J" + (targetPlayerIndex+1));
+                    
+                    GridPanel gridToUpdate = playerGridPanels.get(targetPlayerIndex); 
+                    if (gridToUpdate != null) gridToUpdate.markShot(l, c, r, targetPlayerIndex == playerIndex); 
+                    
+                    String srm = "Tir de " + shooterName + " sur " + targetName + " en " + (char)('A'+c) + (l+1) + " -> " + r.name();
+                    if (sunkShipName != null && r == ModelConstants.ShotResult.COULE) {
+                        srm += " (" + sunkShipName + " COULÉ!)";
+                    }
+                    statusLabel.setText(srm); gameLogUI.addLogEntry(srm); 
+                } else { statusLabel.setText("Erreur: SHOT_RESULT malformé."); gameLogUI.addLogEntry("Erreur: SHOT_RESULT malformé: " + payload); }
                 break;
             case "GAME_OVER":
-                String winMsg; if (payload.equals("DRAW") || payload.equals("GAME_OVER_DRAW")) winMsg = "PARTIE TERMINÉE! Match Nul."; else { String[] goi = payload.split(":",2); winMsg = "PARTIE TERMINÉE! Gagnant: " + goi[0];}
-                JOptionPane.showMessageDialog(this, winMsg, "Fin de Partie", JOptionPane.INFORMATION_MESSAGE); statusLabel.setText(winMsg + ". Retour au lobby..."); gameLogUI.addLogEntry(winMsg + ". Retour au lobby."); // Modifié
-                myTurn = false; inGame = false;
+                String winMsg; 
+                if (payload.equals("DRAW") || payload.equals("GAME_OVER_DRAW")) {
+                     winMsg = "PARTIE TERMINÉE! Match Nul.";
+                } else { 
+                    String[] goi = payload.split(":",2); 
+                    winMsg = "PARTIE TERMINÉE! Gagnant: " + goi[0];
+                }
+                JOptionPane.showMessageDialog(this, winMsg, "Fin de Partie", JOptionPane.INFORMATION_MESSAGE); 
+                statusLabel.setText(winMsg + ". Retour au lobby demandé..."); gameLogUI.addLogEntry(winMsg + ". Retour au lobby demandé par le serveur.");
+                myTurn = false; inGame = false; placementPhase = false;
                 break;
             case "GAME_OVER_DISCONNECT":
-                String dPlayer = payload; String dMsg = "PARTIE TERMINÉE: " + dPlayer + " déconnecté.";
-                JOptionPane.showMessageDialog(this, dMsg, "Fin de Partie", JOptionPane.WARNING_MESSAGE); statusLabel.setText(dMsg + ". Retour au lobby..."); gameLogUI.addLogEntry(dMsg + ". Retour au lobby."); // Modifié
-                myTurn = false; inGame = false;
+                String dPlayer = payload; String dMsg = "PARTIE TERMINÉE: " + dPlayer + " s'est déconnecté.";
+                JOptionPane.showMessageDialog(this, dMsg, "Fin de Partie", JOptionPane.WARNING_MESSAGE); 
+                statusLabel.setText(dMsg + ". Retour au lobby demandé..."); gameLogUI.addLogEntry(dMsg + ". Retour au lobby demandé par le serveur.");
+                myTurn = false; inGame = false; placementPhase = false;
                 break;
-            case "PLAYER_LEFT":
-            case "PLAYER_LEFT_GAME_SPECTATOR":
-                String[] lInfo = payload.split(":"); String lPlayerName = lInfo[0]; int lPlayerIdx = (lInfo.length > 1 && command.equals("PLAYER_LEFT")) ? Integer.parseInt(lInfo[1]) : getPlayerIndexByName(lPlayerName);
-                String plm = "Joueur " + lPlayerName + " a quitté."; statusLabel.setText(plm); gameLogUI.addLogEntry(plm); // Modifié
-                if (lPlayerIdx != -1) { GridPanel lpg = playerGridPanels.get(lPlayerIdx); if(lpg != null) { lpg.setBackground(Color.GRAY.brighter()); lpg.setEnabled(false);
-                    for(int r=0; r < ModelConstants.TAILLE_GRILLE; r++) for(int c=0; c < ModelConstants.TAILLE_GRILLE; c++) if (lpg.buttons[r][c] != null) { lpg.buttons[r][c].setBackground(Color.GRAY.brighter()); lpg.buttons[r][c].setText("OUT"); lpg.buttons[r][c].setEnabled(false);}}
-                    allPlayerNames.remove(lPlayerIdx); }
+            case "PLAYER_LEFT": 
+            case "PLAYER_LEFT_GAME_SPECTATOR": 
+                String[] lInfo = payload.split(":", 2); 
+                String lPlayerName = lInfo[0]; 
+                int lPlayerIdx = -1;
+                if (lInfo.length > 1 && command.equals("PLAYER_LEFT")) { 
+                    try { lPlayerIdx = Integer.parseInt(lInfo[1]); } catch (NumberFormatException e) { /*ignore*/ }
+                }
+
+                String plm = "Joueur " + lPlayerName + (command.equals("PLAYER_LEFT_GAME_SPECTATOR") ? " (spectateur)" : "") + " a quitté.";
+                statusLabel.setText(plm); gameLogUI.addLogEntry(plm);
+                
+                if (lPlayerIdx != -1 && command.equals("PLAYER_LEFT")) { 
+                    GridPanel lpg = playerGridPanels.get(lPlayerIdx); 
+                    if(lpg != null) { 
+                        lpg.setBackground(Color.GRAY.brighter()); 
+                        lpg.setEnabled(false);
+                        for(int r=0; r < ModelConstants.TAILLE_GRILLE; r++) {
+                            for(int c=0; c < ModelConstants.TAILLE_GRILLE; c++) {
+                                if (lpg.buttons[r][c] != null) { 
+                                    lpg.buttons[r][c].setBackground(Color.GRAY.brighter()); 
+                                    lpg.buttons[r][c].setText("OUT"); 
+                                    lpg.buttons[r][c].setEnabled(false);
+                                }
+                            }
+                        }
+                    }
+                    allPlayerNames.remove(lPlayerIdx); 
+                    if (lPlayerIdx == playerIndex) { 
+                        statusLabel.setText("Vous avez été déconnecté de la partie. Retour au lobby...");
+                        inGame = false; myTurn = false; placementPhase = false;
+                    }
+                }
                 break;
             case "NEW_CHAT_MSG":
                 String[] cp = payload.split(":", 2);
-                chatUI.appendMessage(cp.length == 2 ? cp[0] + ": " + cp[1] : payload); // Modifié
+                String senderName = (cp.length == 2) ? cp[0] : "Serveur";
+                String chatMessageContent = (cp.length == 2) ? cp[1] : payload;
+                String fullChatMessage = senderName + ": " + chatMessageContent;
+
+                chatUI.appendMessage(fullChatMessage);
+
+                if (nameSuccessfullySetThisSession && this.playerName != null && !this.playerName.isEmpty() && cp.length == 2) {
+                    String mentionTag = "@" + this.playerName;
+                    if (chatMessageContent.toLowerCase().contains(mentionTag.toLowerCase())) {
+                        triggerClientNotification(true); 
+                        gameLogUI.addLogEntry("Vous avez été mentionné dans le chat par " + senderName + ".");
+                    }
+                }
                 break;
             case "LOBBY_COUNTDOWN_STARTED":
-                 String csMsg = "\nCompte à rebours de " + payload + "s démarré !"; if(lobbyArea != null && lobbyPanelContainer.isVisible()) lobbyArea.append(csMsg); gameLogUI.addLogEntry("Lobby: " + csMsg.trim()); break; // Modifié
+                 String csMsg = "\nCompte à rebours de " + payload + "s démarré !"; if(lobbyArea != null && lobbyPanelContainer.isVisible()) lobbyArea.append(csMsg); gameLogUI.addLogEntry("Lobby: " + csMsg.trim()); break;
             case "LOBBY_COUNTDOWN_CANCELLED":
-                 String ccMsg = "\nCompte à rebours annulé."; if(lobbyArea != null && lobbyPanelContainer.isVisible()) lobbyArea.append(ccMsg); gameLogUI.addLogEntry("Lobby: " + ccMsg.trim()); break; // Modifié
+                 String ccMsg = "\nCompte à rebours annulé."; if(lobbyArea != null && lobbyPanelContainer.isVisible()) lobbyArea.append(ccMsg); gameLogUI.addLogEntry("Lobby: " + ccMsg.trim()); break;
             case "LOBBY_TIMER_ENDED_NO_GAME":
-                 String tenMsg = "\nMinuteur terminé. " + payload + ". En attente..."; if(lobbyArea != null && lobbyPanelContainer.isVisible()) lobbyArea.append(tenMsg); gameLogUI.addLogEntry("Lobby: " + tenMsg.trim()); break; // Modifié
+                 String tenMsg = "\nMinuteur terminé. " + payload + ". En attente..."; if(lobbyArea != null && lobbyPanelContainer.isVisible()) lobbyArea.append(tenMsg); gameLogUI.addLogEntry("Lobby: " + tenMsg.trim()); break;
             case "ERROR":
-                statusLabel.setText("Erreur serveur: " + payload); gameLogUI.addLogEntry("Erreur serveur: " + payload); // Modifié
-                if (payload.contains("nom est déjà utilisé") || payload.contains("nom ne peut pas être vide")) {
-                    if(nameField != null) nameField.setEditable(true); if(connectButton != null) connectButton.setEnabled(true); nameSuccessfullySetThisSession = false;}
-                else if (payload.contains("Serveur plein")) { connectButton.setEnabled(true); if (serverIpField != null) serverIpField.setEditable(true); if (nameField != null) nameField.setEditable(true);}
+                statusLabel.setText("Erreur serveur: " + payload); 
+                gameLogUI.addLogEntry("Erreur serveur: " + payload);
+                if (payload.contains("nom est déjà utilisé") || payload.contains("nom ne peut pas être vide") || payload.contains("15 caractères max")) {
+                    if(nameField != null) { nameField.setEditable(true); nameField.requestFocus(); }
+                    if(connectButton != null) connectButton.setEnabled(true); 
+                    if(serverIpField != null) serverIpField.setEditable(true);
+                    nameSuccessfullySetThisSession = false;
+                } else if (payload.contains("Serveur plein")) { 
+                    if(connectButton != null) connectButton.setEnabled(true); 
+                    if (serverIpField != null) serverIpField.setEditable(true); 
+                    if (nameField != null) nameField.setEditable(true);
+                } else if (connectionPanel.isVisible()) { // MODIFICATION ICI: Fallback pour réactiver les champs
+                    if (connectButton != null) connectButton.setEnabled(true);
+                    if (nameField != null) nameField.setEditable(true);
+                    if (serverIpField != null) serverIpField.setEditable(true);
+                    statusLabel.setText("Erreur: " + payload + ". Veuillez réessayer.");
+                }
                 break;
-            default: System.out.println("Message serveur inconnu: " + command + " " + payload); gameLogUI.addLogEntry("Message serveur non traité: " + command + (payload.isEmpty() ? "" : (":" + payload))); // Modifié
+            default: System.out.println("Message serveur inconnu: " + command + " " + payload); gameLogUI.addLogEntry("Message serveur non traité: " + command + (payload.isEmpty() ? "" : (":" + payload)));
+        }
+    }
+    
+    private void addGameLog(String message) {
+        if (gameLogUI != null) {
+            gameLogUI.addLogEntry(message);
         }
     }
 
-    // GridPanel reste une classe interne pour l'instant
-    // ... (copier la classe GridPanel ici, identique à la version précédente)
     class GridPanel extends JPanel {
         private JButton[][] buttons;
         private int taille;
-        private boolean isMyBoard;
-        public final int boardOwnerPlayerIndex;
+        public final int boardOwnerPlayerIndex; 
 
         private boolean placementModeActive = false;
         private ModelConstants.ShipType shipToPlaceForPreview;
         private boolean previewHorizontal;
         public Point previewStartCell = null;
 
-        public GridPanel(int taille, boolean isMyBoard, int boardOwnerPlayerIndex) {
+        public GridPanel(int taille, boolean isActuallyMyBoard, int boardOwnerPlayerIndex) {
             this.taille = taille;
-            this.isMyBoard = isMyBoard;
             this.boardOwnerPlayerIndex = boardOwnerPlayerIndex;
             setLayout(new GridLayout(taille, taille, 1, 1));
             buttons = new JButton[taille][taille];
@@ -572,36 +723,37 @@ public class BatailleNavaleClient extends JFrame {
                     buttons[i][j].setBorder(thinBorder);
                     buttons[i][j].setBackground(Color.CYAN.darker());
                     buttons[i][j].setOpaque(true);
-                    int preferredCellSize = Math.max(25, Math.min(40, 300 / taille));
+                    int preferredCellSize = Math.max(25, Math.min(40, 350 / taille)); 
                     buttons[i][j].setPreferredSize(new Dimension(preferredCellSize, preferredCellSize));
 
-                    if (!isMyBoard) {
-                        buttons[i][j].setText(String.valueOf(ModelConstants.OPP_UNKNOWN));
-                    } else {
+                    if (boardOwnerPlayerIndex == BatailleNavaleClient.this.playerIndex && !amISpectator) { 
                         buttons[i][j].setText(String.valueOf(ModelConstants.MY_EMPTY));
+                    } else { 
+                        buttons[i][j].setText(String.valueOf(ModelConstants.OPP_UNKNOWN));
                     }
-
 
                     final int r = i;
                     final int c = j;
 
                     buttons[i][j].addActionListener(e -> {
-                        if (amISpectator) return;
+                        if (amISpectator) return; 
 
-                        if (isMyBoard && placementPhase && currentShipToPlace != null && BatailleNavaleClient.this.inGame) {
+                        boolean isMyOwnBoardForAction = (this.boardOwnerPlayerIndex == BatailleNavaleClient.this.playerIndex);
+
+                        if (isMyOwnBoardForAction && placementPhase && currentShipToPlace != null && BatailleNavaleClient.this.inGame) {
                             serverCommunicator.sendMessage("PLACE_SHIP:" + currentShipToPlace.name() + ":" + r + ":" + c + ":" + horizontalRadioButton.isSelected());
-                        } else if (!isMyBoard && myTurn && BatailleNavaleClient.this.inGame && !placementPhase) {
+                        } else if (!isMyOwnBoardForAction && myTurn && BatailleNavaleClient.this.inGame && !placementPhase) {
                              serverCommunicator.sendMessage("FIRE_SHOT:" + this.boardOwnerPlayerIndex + ":" + r + ":" + c);
                         }
                     });
 
-                    if (isMyBoard) {
+                    if (boardOwnerPlayerIndex == BatailleNavaleClient.this.playerIndex && !amISpectator) { 
                         buttons[i][j].addMouseListener(new java.awt.event.MouseAdapter() {
                             public void mouseEntered(java.awt.event.MouseEvent evt) {
                                 if (placementModeActive && currentShipToPlace != null && horizontalRadioButton != null && !amISpectator) {
                                     previewStartCell = new Point(r,c);
-                                    previewHorizontal = horizontalRadioButton.isSelected();
-                                    shipToPlaceForPreview = currentShipToPlace;
+                                    previewHorizontal = horizontalRadioButton.isSelected(); // Mettre à jour l'orientation pour la preview
+                                    shipToPlaceForPreview = currentShipToPlace; // S'assurer que le bon navire est prévisualisé
                                     repaint();
                                 }
                             }
@@ -620,20 +772,21 @@ public class BatailleNavaleClient extends JFrame {
 
         public void setCurrentShipForPlacement(ModelConstants.ShipType shipType, boolean horizontal) {
             this.shipToPlaceForPreview = shipType;
-            this.previewHorizontal = horizontal;
+            this.previewHorizontal = horizontal; 
             this.placementModeActive = (shipType != null);
-            if (this.placementModeActive && previewStartCell != null) {
+            if (this.placementModeActive && previewStartCell != null) { 
                  repaint();
-            } else if (!this.placementModeActive) {
+            } else if (!this.placementModeActive) { 
                 previewStartCell = null;
-                repaint();
+                repaint(); 
             }
         }
 
         public void setPlacementMode(boolean mode) {
             this.placementModeActive = mode;
-            if (!mode) {
+            if (!mode) { 
                 previewStartCell = null;
+                setCurrentShipForPlacement(null, true); 
                 repaint();
             }
         }
@@ -651,58 +804,131 @@ public class BatailleNavaleClient extends JFrame {
                     buttons[currentL][currentC].setBackground(Color.DARK_GRAY);
                     buttons[currentL][currentC].setText(String.valueOf(type.getSpriteChar()));
                     buttons[currentL][currentC].setForeground(Color.WHITE);
-                    buttons[currentL][currentC].setEnabled(false);
+                    buttons[currentL][currentC].setEnabled(false); 
                 }
             }
-            previewStartCell = null;
+            previewStartCell = null; 
             repaint();
         }
 
 
-        public void markShot(int r, int c, ModelConstants.ShotResult result) {
+        public void markShot(int r, int c, ModelConstants.ShotResult result, boolean onMyBoard) {
             if (r < 0 || r >= taille || c < 0 || c >= taille) return;
             JButton button = buttons[r][c]; if (button == null) return;
-            button.setIcon(null);
+            button.setIcon(null); 
+            char displayChar;
+            Color bgColor;
+            Color fgColor = Color.BLACK;
+
             switch (result) {
-                case TOUCHE: button.setText(String.valueOf(isMyBoard ? ModelConstants.MY_HIT_ON_ME : ModelConstants.OPP_HIT)); button.setBackground(isMyBoard ? Color.PINK : Color.ORANGE); button.setForeground(Color.BLACK); button.setEnabled(false); break;
-                case COULE: button.setText(String.valueOf(isMyBoard ? ModelConstants.MY_HIT_ON_ME : ModelConstants.OPP_SUNK)); button.setBackground(Color.RED); button.setForeground(Color.WHITE); button.setEnabled(false); break;
-                case MANQUE: button.setText(String.valueOf(isMyBoard ? ModelConstants.MY_MISS_ON_ME : ModelConstants.OPP_MISS)); button.setBackground(isMyBoard ? Color.BLUE.brighter() : Color.LIGHT_GRAY); button.setForeground(Color.BLACK); button.setEnabled(false); break;
-                case DEJA_JOUE: case ERREUR: break;
+                case TOUCHE:
+                    displayChar = onMyBoard ? ModelConstants.MY_HIT_ON_ME : ModelConstants.OPP_HIT;
+                    bgColor = onMyBoard ? Color.PINK : Color.ORANGE;
+                    break;
+                case COULE:
+                    displayChar = onMyBoard ? ModelConstants.MY_HIT_ON_ME : ModelConstants.OPP_SUNK; 
+                    bgColor = Color.RED;
+                    fgColor = Color.WHITE;
+                    break;
+                case MANQUE:
+                    displayChar = onMyBoard ? ModelConstants.MY_MISS_ON_ME : ModelConstants.OPP_MISS;
+                    bgColor = onMyBoard ? Color.BLUE.brighter() : Color.LIGHT_GRAY;
+                    break;
+                case DEJA_JOUE: 
+                case ERREUR:    
+                default:
+                    return; 
             }
+            button.setText(String.valueOf(displayChar));
+            button.setBackground(bgColor);
+            button.setForeground(fgColor);
+            button.setEnabled(false); 
         }
 
         @Override
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);
-            if (isMyBoard && placementModeActive && shipToPlaceForPreview != null && previewStartCell != null && !amISpectator) {
+            if (boardOwnerPlayerIndex == BatailleNavaleClient.this.playerIndex && !amISpectator && 
+                placementModeActive && shipToPlaceForPreview != null && previewStartCell != null) {
+                
                 Graphics2D g2d = (Graphics2D) g.create();
-                if (buttons[0][0] == null) return; int cellWidth = buttons[0][0].getWidth(); int cellHeight = buttons[0][0].getHeight(); if (cellWidth <= 0 || cellHeight <= 0) return;
-                boolean placementEstValide = true; List<Point> cellulesPreview = new ArrayList<>(); boolean currentOrientation = horizontalRadioButton.isSelected();
+                if (buttons[0][0] == null) { g2d.dispose(); return; } 
+                int cellWidth = buttons[0][0].getWidth(); 
+                int cellHeight = buttons[0][0].getHeight(); 
+                if (cellWidth <= 0 || cellHeight <= 0) { g2d.dispose(); return; }
+
+                boolean placementEstValide = true; 
+                List<Point> cellulesPreview = new ArrayList<>();
+                boolean currentOrientation = this.previewHorizontal; 
+
                 for (int i = 0; i < shipToPlaceForPreview.getTaille(); i++) {
-                    int rP = previewStartCell.x; int cP = previewStartCell.y;
+                    int rP = previewStartCell.x; 
+                    int cP = previewStartCell.y;
                     if (currentOrientation) cP += i; else rP += i;
+                    
+                    if (rP < 0 || rP >= taille || cP < 0 || cP >= taille) { 
+                        placementEstValide = false; 
+                        for (int k=0; k < i; k++) { 
+                             int rPk = previewStartCell.x; int cPk = previewStartCell.y;
+                             if(currentOrientation) cPk += k; else rPk += k;
+                             cellulesPreview.add(new Point(rPk, cPk));
+                        }
+                        break; 
+                    }
+                    if (!buttons[rP][cP].getText().equals(String.valueOf(ModelConstants.MY_EMPTY))) { 
+                        placementEstValide = false; 
+                         for (int k=0; k < i; k++) {
+                             int rPk = previewStartCell.x; int cPk = previewStartCell.y;
+                             if(currentOrientation) cPk += k; else rPk += k;
+                             cellulesPreview.add(new Point(rPk, cPk));
+                        }
+                        cellulesPreview.add(new Point(rP, cP)); 
+                        break; 
+                    }
                     cellulesPreview.add(new Point(rP, cP));
-                    if (rP < 0 || rP >= taille || cP < 0 || cP >= taille) { placementEstValide = false; break; }
-                    if (!buttons[rP][cP].getText().equals(String.valueOf(ModelConstants.MY_EMPTY))) { placementEstValide = false; break; }
                 }
+                
                 g2d.setColor(placementEstValide ? new Color(100, 100, 100, 120) : new Color(255, 0, 0, 120));
-                for (Point cell : cellulesPreview) if (cell.x >= 0 && cell.x < taille && cell.y >= 0 && cell.y < taille) {
-                    Point loc = buttons[cell.x][cell.y].getLocation(); g2d.fillRect(loc.x, loc.y, cellWidth, cellHeight); }
+                for (Point cell : cellulesPreview) {
+                    if (cell.x >= 0 && cell.x < taille && cell.y >= 0 && cell.y < taille) {
+                        Point loc = buttons[cell.x][cell.y].getLocation(); 
+                        g2d.fillRect(loc.x, loc.y, cellWidth, cellHeight); 
+                    }
+                }
                 g2d.dispose();
             }
         }
 
         @Override
         public void setEnabled(boolean enabled) {
-            super.setEnabled(enabled);
-            for (int i = 0; i < taille; i++) for (int j = 0; j < taille; j++) {
-                if (buttons[i][j] == null) continue;
-                if (amISpectator) { buttons[i][j].setEnabled(false); continue; }
-                String txt = buttons[i][j].getText();
-                if (isMyBoard) { if (placementPhase && currentShipToPlace != null) buttons[i][j].setEnabled(enabled && txt.equals(String.valueOf(ModelConstants.MY_EMPTY)));
-                    else buttons[i][j].setEnabled(false);
-                } else { if (BatailleNavaleClient.this.inGame && !placementPhase && myTurn) buttons[i][j].setEnabled(enabled && txt.equals(String.valueOf(ModelConstants.OPP_UNKNOWN)));
-                    else buttons[i][j].setEnabled(false); }
+            super.setEnabled(enabled); 
+
+            boolean isMyOwnBoard = (this.boardOwnerPlayerIndex == BatailleNavaleClient.this.playerIndex && !BatailleNavaleClient.this.amISpectator);
+
+            for (int i = 0; i < taille; i++) {
+                for (int j = 0; j < taille; j++) {
+                    if (buttons[i][j] == null) continue;
+
+                    if (BatailleNavaleClient.this.amISpectator) { 
+                        buttons[i][j].setEnabled(false);
+                        continue;
+                    }
+
+                    String buttonText = buttons[i][j].getText();
+                    if (isMyOwnBoard) { 
+                        if (placementPhase && currentShipToPlace != null) { 
+                            buttons[i][j].setEnabled(enabled && buttonText.equals(String.valueOf(ModelConstants.MY_EMPTY)));
+                        } else { 
+                            buttons[i][j].setEnabled(false);
+                        }
+                    } else { 
+                        if (BatailleNavaleClient.this.inGame && !placementPhase && BatailleNavaleClient.this.myTurn) {
+                            buttons[i][j].setEnabled(enabled && buttonText.equals(String.valueOf(ModelConstants.OPP_UNKNOWN)));
+                        } else { 
+                            buttons[i][j].setEnabled(false);
+                        }
+                    }
+                }
             }
         }
     } // Fin GridPanel

@@ -7,6 +7,9 @@ import java.io.PrintWriter;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.function.Consumer; // Pour le callback de message
+
+import javax.swing.SwingUtilities;
+
 import java.util.function.BiConsumer; // Pour le callback d'erreur de connexion
 
 public class ServerCommunicator {
