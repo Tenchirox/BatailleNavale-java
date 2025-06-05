@@ -1,7 +1,5 @@
 package com.example.bataillenavale.server; // Exemple de package
 
-// package com.example.bataillenavale.server; // Exemple de package
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -11,8 +9,8 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Timer; 
-import java.util.TimerTask; 
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
@@ -23,23 +21,22 @@ import com.example.bataillenavale.model.PlayerBoard;
 import com.example.bataillenavale.model.Ship;
 
 public class BatailleNavaleServer {
-    private static final int PORT = 12347; 
+    private static final int PORT = 12347;
     private ServerSocket serverSocket;
-    // Liste de tous les clients connectés au serveur (joueurs potentiels ou spectateurs)
     private final List<ClientHandler> connectedClients = new ArrayList<>();
-    // Liste des clients participant activement à la partie en cours (rôle JOUEUR)
     private final List<ClientHandler> playersInGame = new ArrayList<>();
     private final ExecutorService pool = Executors.newCachedThreadPool();
     private BatailleNavaleGame game;
-    
-    private static final int MIN_PLAYERS_TO_START_TIMER = 2; 
-    private static final int MAX_PLAYERS_ALLOWED = 7; // Capacité totale du serveur (joueurs + spectateurs potentiels avant refus)
-    private boolean gameInProgressFlag = false; 
+
+    private static final int MIN_PLAYERS_TO_START_TIMER = 2;
+    private static final int MAX_PLAYERS_ALLOWED = 7;
+    private boolean gameInProgressFlag = false;
 
     private Timer lobbyCountdownTimer;
     private TimerTask currentLobbyCountdownTask;
     private static final long LOBBY_COUNTDOWN_MS = 20000; // 20 secondes
     private boolean lobbyCountdownActive = false;
+
 
     public BatailleNavaleServer() {
         try {
@@ -53,15 +50,17 @@ public class BatailleNavaleServer {
 
     public void startServer() {
         System.out.println("En attente de connexions pour " + MIN_PLAYERS_TO_START_TIMER + " à " + MAX_PLAYERS_ALLOWED + " participants...");
-        while (true) { 
+        while (true) {
             try {
                 Socket clientSocket = serverSocket.accept();
-                synchronized (connectedClients) {
-                    if (connectedClients.size() >= MAX_PLAYERS_ALLOWED) {
-                        PrintWriter tempOut = new PrintWriter(clientSocket.getOutputStream(), true);
-                        tempOut.println("ERROR:Serveur plein (max " + MAX_PLAYERS_ALLOWED + " participants).");
-                        clientSocket.close();
-                        continue;
+                synchronized (this) {
+                    if (connectedClients.size() >= MAX_PLAYERS_ALLOWED && !gameInProgressFlag) {
+                        if (!(gameInProgressFlag && connectedClients.size() < MAX_PLAYERS_ALLOWED)) {
+                             PrintWriter tempOut = new PrintWriter(clientSocket.getOutputStream(), true);
+                             tempOut.println("ERROR:Serveur plein (max " + MAX_PLAYERS_ALLOWED + " participants).");
+                             clientSocket.close();
+                             continue;
+                        }
                     }
 
                     ClientHandler clientHandler = new ClientHandler(clientSocket, this);
@@ -71,18 +70,10 @@ public class BatailleNavaleServer {
 
                     if (gameInProgressFlag && game != null && game.getPhaseActuelle() != BatailleNavaleGame.GamePhase.TERMINE) {
                         clientHandler.setRole(ClientHandler.ClientRole.SPECTATOR);
-                        clientHandler.sendMessage("SPECTATE_MODE");
-                        // Envoyer l'état actuel du jeu aux spectateurs (simplifié : noms des joueurs et taille grille)
-                        String allPlayerNamesStr = playersInGame.stream()
-                                                               .map(ClientHandler::getNomJoueur)
-                                                               .collect(Collectors.joining(","));
-                        // SPECTATE_INFO:tailleGrille:nbJoueursEnJeu:nomJ0,nomJ1,...
-                        clientHandler.sendMessage("SPECTATE_INFO:" + PlayerBoard.TAILLE_GRILLE + ":" + playersInGame.size() + ":" + allPlayerNamesStr);
-                        // TODO: Pourrait envoyer l'état actuel des grilles (coups déjà joués) aux spectateurs
-                        System.out.println(clientHandler.getNomJoueur() + " (socket " + clientSocket.getPort() + ") a rejoint en tant que spectateur.");
+                        System.out.println("Client " + clientSocket.getRemoteSocketAddress() + " est un spectateur potentiel (jeu en cours).");
+                        // Le client enverra SET_NAME, et playerHasSetName gérera l'envoi de SPECTATE_MODE et SPECTATE_INFO.
                     } else {
                         clientHandler.setRole(ClientHandler.ClientRole.PLAYER_IN_LOBBY);
-                        // Le client recevra REQ_NAME et enverra SET_NAME
                     }
                 }
             } catch (IOException e) {
@@ -92,95 +83,103 @@ public class BatailleNavaleServer {
     }
 
     public synchronized void playerHasSetName(ClientHandler clientHandler) {
-        // Si le joueur définit son nom et qu'une partie est en cours où il pourrait être spectateur
         if (clientHandler.getRole() == ClientHandler.ClientRole.SPECTATOR) {
-            broadcastLobbyState(); // Pour le chat, que les spectateurs voient aussi qui est qui
-            // Envoyer les infos de la partie aux spectateurs, y compris le nom du joueur qui vient de se nommer
-            String allPlayerNamesStr = playersInGame.stream()
-                                                   .map(ClientHandler::getNomJoueur)
-                                                   .collect(Collectors.joining(","));
-            String allConnectedNamesStr = connectedClients.stream()
-                                                        .filter(ClientHandler::isNameSet)
-                                                        .map(ClientHandler::getNomJoueur)
-                                                        .collect(Collectors.joining(","));
-            
-            // Informer tous les spectateurs de la liste des noms (y compris le nouveau spectateur)
-            for(ClientHandler ch : connectedClients) {
-                if (ch.getRole() == ClientHandler.ClientRole.SPECTATOR) {
-                    // SPECTATE_INFO:tailleGrille:nbJoueursEnJeu:nomJ0,nomJ1,...:nomSpectateur1,nomSpectateur2...
-                    // Pour l'instant, envoyons juste la liste des joueurs en jeu.
-                    // Le chat gérera l'affichage des noms des spectateurs.
-                    // Le client spectateur saura qui sont les joueurs via SPECTATE_INFO.
-                }
+            System.out.println("Spectateur " + clientHandler.getNomJoueur() + " a défini son nom.");
+
+            // CORRECTION : Gérer différemment si une partie est active ou non.
+            if (gameInProgressFlag && game != null && game.getPhaseActuelle() != BatailleNavaleGame.GamePhase.TERMINE) {
+                // Partie active: Envoyer les informations de spectateur UNIQUEMENT à ce client.
+                // NE PAS appeler broadcastLobbyState() ici pour éviter d'interrompre les joueurs.
+                clientHandler.sendMessage("SPECTATE_MODE");
+                String allPlayerNamesStr = playersInGame.stream()
+                                                      .map(ClientHandler::getNomJoueur)
+                                                      .collect(Collectors.joining(","));
+                clientHandler.sendMessage("SPECTATE_INFO:" + PlayerBoard.TAILLE_GRILLE + ":" + playersInGame.size() + ":" + allPlayerNamesStr);
+                handleChatMessage(clientHandler, "[A rejoint le chat en tant que spectateur]");
+                System.out.println(clientHandler.getNomJoueur() + " a reçu les infos pour spectateur.");
+            } else {
+                // Partie non active (ou terminée) : Ce "spectateur" devient un joueur dans le lobby.
+                System.out.println("Jeu non en cours ou terminé. " + clientHandler.getNomJoueur() + " devient joueur dans le lobby.");
+                clientHandler.setRole(ClientHandler.ClientRole.PLAYER_IN_LOBBY);
+                // Maintenant, traiter ce client comme n'importe quel autre joueur du lobby qui vient de définir son nom.
+                // La suite de cette méthode (hors de ce bloc 'if') s'en chargera.
+                // On appelle broadcastLobbyState() et la logique de démarrage de partie ci-dessous.
+                broadcastLobbyState(); // Informer tout le monde de l'état du lobby
+                handleChatMessage(clientHandler, "[A rejoint le chat du lobby]");
+                // La logique de comptage et de démarrage de partie suivra.
             }
-             // Envoyer les messages de chat existants (TODO: stocker et envoyer l'historique du chat)
-            handleChatMessage(clientHandler, "[A rejoint le chat en tant que spectateur]");
-
-
-            return; // Pas de logique de démarrage de jeu si c'est un spectateur
-        }
-
-
-        broadcastLobbyState(); 
-
-        int namedPlayerCount = 0;
-        synchronized (connectedClients) {
-            for (ClientHandler ch : connectedClients) {
-                if (ch.isNameSet() && ch.getRole() == ClientHandler.ClientRole.PLAYER_IN_LOBBY) {
-                    namedPlayerCount++;
-                }
+             // Si le client était spectateur d'une partie active, on retourne pour ne pas exécuter la logique du lobby.
+            if (clientHandler.getRole() == ClientHandler.ClientRole.SPECTATOR && gameInProgressFlag) {
+                return;
             }
         }
 
-        if (!gameInProgressFlag && !lobbyCountdownActive && namedPlayerCount >= MIN_PLAYERS_TO_START_TIMER) {
-            System.out.println(namedPlayerCount + " joueurs ont défini leur nom. Démarrage du compte à rebours du lobby.");
-            startLobbyCountdown();
-        } else if (!gameInProgressFlag && lobbyCountdownActive && namedPlayerCount == MAX_PLAYERS_ALLOWED) {
-            // Vérifier si tous ceux dans connectedClients (qui ne sont pas déjà spectateurs) sont prêts
-            boolean allPotentialPlayersReady = true;
-            int potentialPlayerCount = 0;
-            synchronized(connectedClients){
-                for(ClientHandler ch : connectedClients){
-                    if(ch.getRole() == ClientHandler.ClientRole.PLAYER_IN_LOBBY){
-                        potentialPlayerCount++;
-                        if(!ch.isNameSet()){
-                            allPotentialPlayersReady = false;
-                            break;
-                        }
+        // Ce code s'exécute si le client est PLAYER_IN_LOBBY
+        // (soit initialement, soit après avoir été re-rolé depuis SPECTATOR car aucune partie n'était active)
+        if (clientHandler.getRole() == ClientHandler.ClientRole.PLAYER_IN_LOBBY) {
+             // S'il n'a pas été appelé juste au-dessus (cas du spectateur devenant lobby player)
+             if (!(gameInProgressFlag && clientHandler.getRole() == ClientHandler.ClientRole.SPECTATOR)) { // Eviter double broadcast si transition
+                 broadcastLobbyState(); // Assurer que l'état du lobby est diffusé
+             }
+
+            int namedPlayerCount = 0;
+            synchronized (connectedClients) {
+                for (ClientHandler ch : connectedClients) {
+                    if (ch.isNameSet() && ch.getRole() == ClientHandler.ClientRole.PLAYER_IN_LOBBY) {
+                        namedPlayerCount++;
                     }
                 }
             }
-            if(allPotentialPlayersReady && potentialPlayerCount == MAX_PLAYERS_ALLOWED){ // Max joueurs du jeu, pas du serveur total
-                System.out.println("Nombre maximum de joueurs (" + potentialPlayerCount + ") atteint et noms définis. Démarrage anticipé.");
-                cancelLobbyCountdown();
-                prepareAndStartGameWithReadyPlayers();
+            System.out.println("Joueurs avec nom dans le lobby: " + namedPlayerCount);
+
+            if (!gameInProgressFlag && !lobbyCountdownActive && namedPlayerCount >= MIN_PLAYERS_TO_START_TIMER) {
+                System.out.println(namedPlayerCount + " joueurs ont défini leur nom. Démarrage du compte à rebours du lobby.");
+                startLobbyCountdown();
+            } else if (!gameInProgressFlag && namedPlayerCount >= MAX_PLAYERS_ALLOWED ) { // Si le lobby est plein (et >= min), démarrer direct
+                 System.out.println("Nombre maximum de joueurs (" + namedPlayerCount + ") atteint et noms définis. Démarrage anticipé.");
+                 if (lobbyCountdownActive) cancelLobbyCountdown();
+                 prepareAndStartGameWithReadyPlayers();
             }
         }
     }
-    
+
+    // ... (Le reste des méthodes : startLobbyCountdown, cancelLobbyCountdown,
+    // prepareAndStartGameWithReadyPlayers, handleAdminStartGame, passerAuPlacementSuivant,
+    // handlePlacementNavire, informerTourCombat, handleTir, handleClientQuitte,
+    // handleChatMessage, resetServerForNewLobby, broadcast, broadcastToPlayersInGame,
+    // broadcastToAllParticipants, broadcastSaufAUnJoueurEnPartie, getClientHandlerByGlobalIndexInGame,
+    // nombreJoueursInitialDeLaPartie, broadcastLobbyState, main, et la classe ClientHandler
+    // restent identiques à la version précédente que je vous ai fournie,
+    // qui incluait déjà les corrections pour handlePlayerDisconnect dans BatailleNavaleGame)
+
+    // Copiez ici le reste du code de BatailleNavaleServer.java que j'ai fourni dans la réponse précédente.
+    // (Ce code est trop long pour être répété intégralement ici, mais il est essentiel que vous utilisiez
+    // la version qui appelle game.handlePlayerDisconnect() etc.)
+
+    // --- DEBUT DU CODE A REPRENDRE DE LA REPONSE PRECEDENTE ---
     private synchronized void startLobbyCountdown() {
         if (lobbyCountdownActive || gameInProgressFlag) {
             return;
         }
         lobbyCountdownActive = true;
         if (lobbyCountdownTimer == null) {
-            lobbyCountdownTimer = new Timer("LobbyTimer", true); 
+            lobbyCountdownTimer = new Timer("LobbyTimer", true);
         }
         currentLobbyCountdownTask = new TimerTask() {
             @Override
             public void run() {
-                synchronized (connectedClients) { 
-                    lobbyCountdownActive = false; 
-                    if (gameInProgressFlag) return; 
+                synchronized (BatailleNavaleServer.this) { // Synchroniser sur l'instance du serveur
+                    lobbyCountdownActive = false;
+                    if (gameInProgressFlag) return;
 
                     int namedPlayerCount = 0;
-                    for (ClientHandler ch : connectedClients) {
+                    for (ClientHandler ch : connectedClients) { // Pas besoin de copier ici grâce à la synchro externe
                         if (ch.isNameSet() && ch.getRole() == ClientHandler.ClientRole.PLAYER_IN_LOBBY) namedPlayerCount++;
                     }
 
                     if (namedPlayerCount >= MIN_PLAYERS_TO_START_TIMER) {
                         System.out.println("Compte à rebours du lobby terminé. Démarrage du jeu avec " + namedPlayerCount + " joueurs.");
-                        prepareAndStartGameWithReadyPlayers(); 
+                        prepareAndStartGameWithReadyPlayers();
                     } else {
                         System.out.println("Compte à rebours du lobby terminé, mais pas assez de joueurs ayant défini un nom. En attente...");
                         broadcast("LOBBY_TIMER_ENDED_NO_GAME:Pas assez de joueurs prêts.");
@@ -196,7 +195,7 @@ public class BatailleNavaleServer {
     private synchronized void cancelLobbyCountdown() {
         if (currentLobbyCountdownTask != null) {
             currentLobbyCountdownTask.cancel();
-            currentLobbyCountdownTask = null; 
+            currentLobbyCountdownTask = null;
         }
         if (lobbyCountdownActive) {
             lobbyCountdownActive = false;
@@ -214,7 +213,7 @@ public class BatailleNavaleServer {
         List<ClientHandler> joueursPretsPourPartie = new ArrayList<>();
         synchronized (connectedClients) {
             for (ClientHandler ch : connectedClients) {
-                if (ch.isNameSet() && ch.getRole() == ClientHandler.ClientRole.PLAYER_IN_LOBBY && ch.isSocketActive()) { 
+                if (ch.isNameSet() && ch.getRole() == ClientHandler.ClientRole.PLAYER_IN_LOBBY && ch.isSocketActive()) {
                     joueursPretsPourPartie.add(ch);
                 }
             }
@@ -226,16 +225,16 @@ public class BatailleNavaleServer {
             return;
         }
         
-        gameInProgressFlag = true; 
-        cancelLobbyCountdown(); 
+        gameInProgressFlag = true;
+        cancelLobbyCountdown();
 
         synchronized(playersInGame) {
             playersInGame.clear();
             playersInGame.addAll(joueursPretsPourPartie);
-            for(int i=0; i < playersInGame.size(); i++) {
+            for(int i=0; i < playersInGame.size(); i++) { 
                 ClientHandler player = playersInGame.get(i);
-                player.setPlayerIndex(i); 
-                player.setRole(ClientHandler.ClientRole.PLAYER_IN_GAME); // Mettre à jour le rôle
+                player.setPlayerIndex(i);
+                player.setRole(ClientHandler.ClientRole.PLAYER_IN_GAME);
             }
         }
         
@@ -249,29 +248,49 @@ public class BatailleNavaleServer {
 
         String allPlayerNamesStr = Arrays.stream(nomsJoueursEnPartie).collect(Collectors.joining(","));
 
-        // Informer les joueurs de la partie
-        for (ClientHandler client : playersInGame) { 
+        for (ClientHandler client : playersInGame) {
             client.sendMessage("GAME_START:" + PlayerBoard.TAILLE_GRILLE + ":" + client.getPlayerIndex() + ":" + playersInGame.size() + ":" + allPlayerNamesStr);
         }
-        // Informer les spectateurs potentiels (ceux dans connectedClients mais pas dans playersInGame)
+        
         synchronized(connectedClients) {
             for(ClientHandler ch : connectedClients) {
-                if (!playersInGame.contains(ch)) { // Si c'est un spectateur
-                    ch.setRole(ClientHandler.ClientRole.SPECTATOR);
-                    ch.sendMessage("SPECTATE_MODE");
-                    ch.sendMessage("SPECTATE_INFO:" + PlayerBoard.TAILLE_GRILLE + ":" + playersInGame.size() + ":" + allPlayerNamesStr);
+                if (!playersInGame.contains(ch)) { 
+                    ch.setRole(ClientHandler.ClientRole.SPECTATOR); 
+                    if (ch.isNameSet()) { 
+                        ch.sendMessage("SPECTATE_MODE");
+                        ch.sendMessage("SPECTATE_INFO:" + PlayerBoard.TAILLE_GRILLE + ":" + playersInGame.size() + ":" + allPlayerNamesStr);
+                         System.out.println(ch.getNomJoueur() + " est maintenant spectateur de la nouvelle partie.");
+                    } else {
+                        ch.sendMessage("REQ_NAME"); 
+                    }
                 }
             }
         }
-
         passerAuPlacementSuivant();
     }
 
     public synchronized void handleAdminStartGame(ClientHandler adminClient) {
-        if (connectedClients.isEmpty() || connectedClients.get(0) != adminClient) {
-            adminClient.sendMessage("ERROR:Seul l'hôte (premier joueur connecté et ayant défini son nom) peut démarrer la partie.");
+        boolean isAdminHost = false;
+        synchronized(connectedClients) {
+            if (!connectedClients.isEmpty()) {
+                ClientHandler firstPotentialHost = null;
+                for (ClientHandler ch_loop : connectedClients) {
+                    if (ch_loop.isNameSet() && ch_loop.getRole() == ClientHandler.ClientRole.PLAYER_IN_LOBBY) {
+                        firstPotentialHost = ch_loop;
+                        break;
+                    }
+                }
+                if (firstPotentialHost == adminClient) {
+                    isAdminHost = true;
+                }
+            }
+        }
+
+        if (!isAdminHost) {
+            adminClient.sendMessage("ERROR:Seul l'hôte (premier joueur connecté ayant un nom dans le lobby) peut démarrer la partie.");
             return;
         }
+
         if (gameInProgressFlag) {
             adminClient.sendMessage("ERROR:La partie est déjà en cours ou en démarrage.");
             return;
@@ -279,8 +298,8 @@ public class BatailleNavaleServer {
         
         int namedPlayerCount = 0;
         synchronized(connectedClients) {
-            for(ClientHandler ch : connectedClients) {
-                if(ch.isNameSet() && ch.getRole() == ClientHandler.ClientRole.PLAYER_IN_LOBBY) namedPlayerCount++;
+            for(ClientHandler ch_loop : connectedClients) {
+                if(ch_loop.isNameSet() && ch_loop.getRole() == ClientHandler.ClientRole.PLAYER_IN_LOBBY) namedPlayerCount++;
             }
         }
 
@@ -291,60 +310,67 @@ public class BatailleNavaleServer {
 
         System.out.println("Démarrage de la partie par l'administrateur/hôte: " + adminClient.getNomJoueur());
         cancelLobbyCountdown();
-        prepareAndStartGameWithReadyPlayers(); 
+        prepareAndStartGameWithReadyPlayers();
     }
-
 
     private synchronized void passerAuPlacementSuivant() {
         if (game == null) {
             System.err.println("passerAuPlacementSuivant appelé alors que game est null.");
-            resetServerForNewLobby(); 
+            if (gameInProgressFlag) { 
+                 broadcastToAllParticipants("ERROR:Erreur critique du jeu, retour au lobby.");
+                 resetServerForNewLobby();
+            }
             return;
         }
 
         if (game.getPhaseActuelle() == BatailleNavaleGame.GamePhase.COMBAT) {
             System.out.println("Tous les navires placés. Début de la phase de combat.");
-            broadcastToPlayersInGame("ALL_SHIPS_PLACED"); 
-            informerTourCombat(); 
-            return; 
+            broadcastToPlayersInGame("ALL_SHIPS_PLACED");
+            informerTourCombat();
+            return;
         }
 
         if (game.getPhaseActuelle() == BatailleNavaleGame.GamePhase.PLACEMENT_BATEAUX) {
             int gameCurrentPlayerGlobalIndex = game.getJoueurCourantIndex();
-             if (gameCurrentPlayerGlobalIndex < 0 || gameCurrentPlayerGlobalIndex >= game.getNombreJoueursInitial() ) { 
-                System.err.println("Erreur: Index de joueur courant global invalide ("+gameCurrentPlayerGlobalIndex+") pour la phase de placement.");
+             if (gameCurrentPlayerGlobalIndex == -1) { 
+                System.err.println("Erreur: Aucun joueur actif pour la phase de placement.");
+                if (game.getNombreJoueursActifs() == 0 && !playersInGame.isEmpty()) { 
+                    broadcastToAllParticipants("GAME_OVER_DISCONNECT:Tous les joueurs ont quitté pendant le placement.");
+                } else {
+                     broadcastToAllParticipants("ERROR:Problème de joueur pour le placement.");
+                }
                 resetServerForNewLobby();
                 return;
             }
+
             ClientHandler clientActif = getClientHandlerByGlobalIndexInGame(gameCurrentPlayerGlobalIndex);
             if (clientActif == null) {
-                System.err.println("Erreur: Impossible de trouver le ClientHandler (en jeu) pour l'index global " + gameCurrentPlayerGlobalIndex);
-                // Cela peut arriver si un joueur s'est déconnecté pendant le placement.
-                // La logique de `game.placerNavireJoueurCourant` ou `passerAuJoueurSuivantPourPlacement`
-                // dans BatailleNavaleGame devrait gérer l'élimination de joueurs et le passage correct.
-                // Si on arrive ici, c'est un état potentiellement incohérent.
-                resetServerForNewLobby();
+                System.err.println("Erreur: Joueur courant (" + gameCurrentPlayerGlobalIndex + ") pour placement non trouvé ou inactif côté serveur.");
+                game.passerAuJoueurSuivantPourPlacement(); 
+                passerAuPlacementSuivant(); 
                 return;
             }
 
-
             List<Ship.ShipType> naviresAPlacer = game.getNaviresAPlacerPourJoueurCourant();
-
             if (!naviresAPlacer.isEmpty()) {
                 Ship.ShipType prochainNavire = naviresAPlacer.get(0);
                 clientActif.sendMessage("YOUR_TURN_PLACE_SHIP:" + prochainNavire.name() + ":" + prochainNavire.getTaille() + ":" + prochainNavire.getNom());
                 broadcastSaufAUnJoueurEnPartie(clientActif,"WAIT_PLACEMENT:" + clientActif.getNomJoueur() + ":" + prochainNavire.getNom());
             } else {
-                System.out.println("Joueur " + clientActif.getNomJoueur() + " a fini ses placements. Vérification pour le suivant ou phase de combat.");
-                passerAuPlacementSuivant();
+                System.out.println("Joueur " + clientActif.getNomJoueur() + " a fini ses placements. Demande de passage au suivant.");
+                game.passerAuJoueurSuivantPourPlacement(); 
+                passerAuPlacementSuivant(); 
             }
         } else if (game.getPhaseActuelle() == BatailleNavaleGame.GamePhase.TERMINE) {
              System.out.println("Jeu terminé, pas de placement suivant.");
+             if (gameInProgressFlag) { 
+                 resetServerForNewLobby();
+             }
         } else {
             System.err.println("Phase de jeu inattendue dans passerAuPlacementSuivant: " + game.getPhaseActuelle());
         }
     }
-    
+
     public synchronized void handlePlacementNavire(ClientHandler client, Ship.ShipType type, int ligne, int col, boolean horizontal) {
         if (client.getRole() != ClientHandler.ClientRole.PLAYER_IN_GAME) {
              client.sendMessage("ERROR:Les spectateurs ne peuvent pas placer de navires."); return;
@@ -353,7 +379,7 @@ public class BatailleNavaleServer {
             client.sendMessage("ERROR:Pas en phase de placement.");
             return;
         }
-        if (client.getPlayerIndex() != game.getJoueurCourantIndex()) { 
+        if (client.getPlayerIndex() != game.getJoueurCourantIndex()) {
             client.sendMessage("ERROR:Pas votre tour de placer.");
             return;
         }
@@ -367,33 +393,47 @@ public class BatailleNavaleServer {
         if (game.placerNavireJoueurCourant(type, ligne, col, horizontal)) {
             client.sendMessage("PLACEMENT_ACCEPTED:" + type.name() + ":" + ligne + ":" + col + ":" + horizontal);
             broadcastSaufAUnJoueurEnPartie(client, "PLAYER_PLACED_SHIP:" + client.getNomJoueur() + ":" + type.getNom());
-            passerAuPlacementSuivant(); 
+            passerAuPlacementSuivant();
         } else {
             client.sendMessage("PLACEMENT_REJECTED:" + type.name());
             List<Ship.ShipType> currentNaviresAPlacer = game.getNaviresAPlacerPourJoueurCourant(); 
-            if (!currentNaviresAPlacer.isEmpty()) {
+            if (!currentNaviresAPlacer.isEmpty() && currentNaviresAPlacer.get(0) == type) {
                  Ship.ShipType prochainNavire = currentNaviresAPlacer.get(0);
                  client.sendMessage("YOUR_TURN_PLACE_SHIP:" + prochainNavire.name() + ":" + prochainNavire.getTaille() + ":" + prochainNavire.getNom());
-            } else {
-                 System.err.println("Erreur critique: Rejet de placement mais plus de navires à placer pour " + client.getNomJoueur());
+            } else if (!currentNaviresAPlacer.isEmpty()) { 
+                 Ship.ShipType prochainNavire = currentNaviresAPlacer.get(0);
+                 client.sendMessage("YOUR_TURN_PLACE_SHIP:" + prochainNavire.name() + ":" + prochainNavire.getTaille() + ":" + prochainNavire.getNom());
+                 System.out.println("Placement rejeté, mais le navire attendu a changé pour " + client.getNomJoueur());
+            } else { 
+                 System.err.println("Erreur critique: Rejet de placement mais plus de navires à placer pour " + client.getNomJoueur() + " ou liste vide.");
+                 passerAuPlacementSuivant(); 
             }
         }
     }
 
     private synchronized void informerTourCombat() {
-        if (game == null || game.getPhaseActuelle() != BatailleNavaleGame.GamePhase.COMBAT) return;
-        
+        if (game == null || game.getPhaseActuelle() != BatailleNavaleGame.GamePhase.COMBAT) {
+            if (game != null && game.getPhaseActuelle() == BatailleNavaleGame.GamePhase.TERMINE && gameInProgressFlag) {
+                 System.out.println("informerTourCombat appelé alors que le jeu est terminé.");
+            }
+            return;
+        }
+
         int joueurCourantGlobalIndex = game.getJoueurCourantIndex();
-        if (joueurCourantGlobalIndex == -1 || playersInGame.isEmpty()) {
-             System.err.println("Erreur dans informerTourCombat: Aucun joueur courant ou liste des joueurs en jeu vide.");
-             resetServerForNewLobby();
+        if (joueurCourantGlobalIndex == -1) { 
+             System.err.println("Erreur dans informerTourCombat: Aucun joueur courant actif.");
+             if (game.getPhaseActuelle() != BatailleNavaleGame.GamePhase.TERMINE) { 
+                broadcastToAllParticipants("GAME_OVER_DRAW: Aucun joueur actif restant en combat.");
+                resetServerForNewLobby();
+             }
              return;
         }
-        
+
         ClientHandler clientActif = getClientHandlerByGlobalIndexInGame(joueurCourantGlobalIndex);
         if (clientActif == null) {
-            System.err.println("Erreur dans informerTourCombat: ClientHandler non trouvé pour l'index global " + joueurCourantGlobalIndex);
-            resetServerForNewLobby();
+            System.err.println("Erreur dans informerTourCombat: ClientHandler non trouvé pour l'index global " + joueurCourantGlobalIndex + ".");
+            game.passerAuJoueurSuivantPourCombat(); 
+            informerTourCombat(); 
             return;
         }
 
@@ -414,46 +454,47 @@ public class BatailleNavaleServer {
             clientTireur.sendMessage("ERROR:Pas votre tour de tirer.");
             return;
         }
-        if (targetPlayerGlobalIndex < 0 || targetPlayerGlobalIndex >= game.getNombreJoueursInitial() || targetPlayerGlobalIndex == clientTireur.getPlayerIndex()) {
-            clientTireur.sendMessage("ERROR:Cible de tir invalide.");
+
+        PlayerBoard targetBoard = game.getPlayerBoard(targetPlayerGlobalIndex); 
+        if (targetBoard == null || targetPlayerGlobalIndex == clientTireur.getPlayerIndex() ||
+            (game.getJoueursActifsIndices() != null && !game.getJoueursActifsIndices().contains(targetPlayerGlobalIndex))) {
+            clientTireur.sendMessage("ERROR:Cible de tir invalide ou joueur inactif.");
+            clientTireur.sendMessage("YOUR_TURN_FIRE"); 
             return;
         }
-        if (game.getJoueursActifsIndices() != null && !game.getJoueursActifsIndices().contains(targetPlayerGlobalIndex)) { 
-             clientTireur.sendMessage("ERROR:Ce joueur n'est plus actif ou a été éliminé.");
-             clientTireur.sendMessage("YOUR_TURN_FIRE"); 
-             return;
-        }
-
 
         PlayerBoard.ShotResult resultat = game.tirerSurAdversaire(targetPlayerGlobalIndex, ligne, col);
-        String nomJoueurCible = game.getPlayerBoard(targetPlayerGlobalIndex).getNomJoueur(); 
+        String nomJoueurCible = game.getPlayerBoard(targetPlayerGlobalIndex).getNomJoueur();
         int joueurTireurIndex = clientTireur.getPlayerIndex();
 
         String messageBase = "SHOT_RESULT:" + joueurTireurIndex + ":" + targetPlayerGlobalIndex + ":" + ligne + ":" + col + ":" + resultat.name();
-        
+
         if (resultat == PlayerBoard.ShotResult.COULE) {
-            Ship navireCoule = null;
-            PlayerBoard boardCible = game.getPlayerBoard(targetPlayerGlobalIndex);
-            for(Ship s : boardCible.getNavires()){
-                boolean segmentToucheSurCeNavire = false;
-                for(java.awt.Point p : s.getPositions()){
-                    if(p.x == ligne && p.y == col) {
-                        segmentToucheSurCeNavire = true;
+            Ship navireCouleDetecte = null;
+            PlayerBoard boardCibleEffective = game.getPlayerBoard(targetPlayerGlobalIndex); 
+            for(Ship s : boardCibleEffective.getNavires()){
+                if(s.estCoule()){ 
+                    boolean segmentToucheSurCeNavire = false;
+                    for(java.awt.Point p : s.getPositions()){ 
+                        if(p.x == ligne && p.y == col) {
+                            segmentToucheSurCeNavire = true;
+                            break;
+                        }
+                    }
+                    if (segmentToucheSurCeNavire) {
+                        navireCouleDetecte = s;
                         break;
                     }
-                }
-                if(segmentToucheSurCeNavire && s.estCoule()){
-                    navireCoule = s;
-                    break;
+                    if (navireCouleDetecte == null) navireCouleDetecte = s; 
                 }
             }
-            if(navireCoule != null){
-                messageBase += ":" + navireCoule.getType().getNom();
+            if(navireCouleDetecte != null){
+                messageBase += ":" + navireCouleDetecte.getType().getNom();
             } else {
-                 messageBase += ":UNKNOWN_SHIP"; 
+                 messageBase += ":UNKNOWN_SHIP";
             }
         }
-        broadcastToAllParticipants(messageBase); // Envoyer aux joueurs ET aux spectateurs
+        broadcastToAllParticipants(messageBase);
         System.out.println("Tir de " + clientTireur.getNomJoueur() + " sur " + nomJoueurCible + " en " + ligne + "," + col + " -> " + resultat);
 
         if (game.getPhaseActuelle() == BatailleNavaleGame.GamePhase.TERMINE) {
@@ -462,103 +503,111 @@ public class BatailleNavaleServer {
                 broadcastToAllParticipants("GAME_OVER:" + nomGagnant + ":" + game.getGagnantIndex());
                 System.out.println("Partie terminée. Gagnant: " + nomGagnant);
             } else {
-                broadcastToAllParticipants("GAME_OVER_DRAW"); 
+                broadcastToAllParticipants("GAME_OVER_DRAW");
                 System.out.println("Partie terminée. Aucun survivant ou match nul.");
             }
-            resetServerForNewLobby(); 
+            resetServerForNewLobby();
         } else if (resultat != PlayerBoard.ShotResult.DEJA_JOUE && resultat != PlayerBoard.ShotResult.ERREUR) {
-            informerTourCombat(); 
-        } else {
-            clientTireur.sendMessage("YOUR_TURN_FIRE"); 
+            informerTourCombat();
+        } else { 
+            clientTireur.sendMessage("YOUR_TURN_FIRE");
         }
     }
-    
+
     public synchronized void handleClientQuitte(ClientHandler client) {
-        System.out.println("Participant " + client.getNomJoueur() + " (rôle: " + client.getRole() + ") a quitté/s'est déconnecté.");
-        boolean clientEtaitConnecteGeneral = connectedClients.remove(client);
-        boolean clientEtaitEnJeu = playersInGame.remove(client); 
+        System.out.println("Déconnexion demandée/détectée pour: " + client.getNomJoueur() + " (rôle: " + client.getRole() + ", index: " + client.getPlayerIndex() + ")");
 
+        boolean clientEtaitDansConnectedClients = connectedClients.remove(client);
+        boolean clientEtaitDansPlayersInGame = playersInGame.remove(client);
 
-        if (gameInProgressFlag && clientEtaitEnJeu) { 
-            broadcastToPlayersInGame("PLAYER_LEFT:" + client.getNomJoueur()); 
-            // Informer aussi les spectateurs
-            synchronized(connectedClients) {
-                for(ClientHandler spec : connectedClients) {
-                    if (spec.getRole() == ClientHandler.ClientRole.SPECTATOR) {
-                        spec.sendMessage("PLAYER_LEFT_GAME_SPECTATOR:" + client.getNomJoueur());
+        if (gameInProgressFlag && clientEtaitDansPlayersInGame && game != null) {
+            System.out.println("Joueur " + client.getNomJoueur() + " a quitté une partie en cours.");
+            boolean gamePeutContinuer = game.handlePlayerDisconnect(client.getPlayerIndex());
+
+            if (gamePeutContinuer && game.getPhaseActuelle() != BatailleNavaleGame.GamePhase.TERMINE) {
+                broadcastToAllParticipants("PLAYER_LEFT:" + client.getNomJoueur() + ":" + client.getPlayerIndex());
+                System.out.println("La partie continue sans " + client.getNomJoueur() + ".");
+                if (game.getPhaseActuelle() == BatailleNavaleGame.GamePhase.PLACEMENT_BATEAUX) {
+                    passerAuPlacementSuivant();
+                } else if (game.getPhaseActuelle() == BatailleNavaleGame.GamePhase.COMBAT) {
+                    informerTourCombat();
+                }
+            } else {
+                String raisonFin = game.getGagnantIndex() != -1 && game.getPlayerBoard(game.getGagnantIndex()) != null ?
+                                   game.getPlayerBoard(game.getGagnantIndex()).getNomJoueur() :
+                                   (client.getNomJoueur() + " (déconnexion)");
+
+                String messageFin = game.getPhaseActuelle() == BatailleNavaleGame.GamePhase.TERMINE && game.getGagnantIndex() != -1 && game.getPlayerBoard(game.getGagnantIndex()) != null ?
+                                   "GAME_OVER:" + game.getPlayerBoard(game.getGagnantIndex()).getNomJoueur() + ":" + game.getGagnantIndex():
+                                   "GAME_OVER_DISCONNECT:" + client.getNomJoueur();
+
+                broadcastToAllParticipants(messageFin);
+                System.out.println("Partie terminée. Raison approx: " + raisonFin);
+                resetServerForNewLobby();
+            }
+        } else if (clientEtaitDansConnectedClients) { 
+            System.out.println("Participant " + client.getNomJoueur() + " a quitté (hors partie active).");
+            if (client.getRole() == ClientHandler.ClientRole.PLAYER_IN_LOBBY && lobbyCountdownActive) {
+                int playerCountInLobby = 0;
+                synchronized(connectedClients) { 
+                    for (ClientHandler ch : connectedClients) {
+                        if (ch.isNameSet() && ch.getRole() == ClientHandler.ClientRole.PLAYER_IN_LOBBY) {
+                            playerCountInLobby++;
+                        }
                     }
                 }
-            }
-
-            System.out.println("La partie est terminée car un joueur ("+client.getNomJoueur()+") a quitté.");
-            broadcastToPlayersInGame("GAME_OVER_DISCONNECT:" + client.getNomJoueur());
-            synchronized(connectedClients) { // Informer les spectateurs de la fin de partie
-                 for(ClientHandler spec : connectedClients) {
-                    if (spec.getRole() == ClientHandler.ClientRole.SPECTATOR) {
-                       spec.sendMessage("GAME_OVER_DISCONNECT_SPECTATOR:" + client.getNomJoueur());
-                    }
-                }
-            }
-            resetServerForNewLobby();
-        } else if (clientEtaitConnecte) { 
-            System.out.println("Un participant a quitté le lobby.");
-            if (lobbyCountdownActive) {
-                int namedPlayerCount = 0;
-                for(ClientHandler ch : connectedClients) if(ch.isNameSet() && ch.getRole() == ClientHandler.ClientRole.PLAYER_IN_LOBBY) namedPlayerCount++;
-                if (namedPlayerCount < MIN_PLAYERS_TO_START_TIMER) {
-                    System.out.println("Moins de " + MIN_PLAYERS_TO_START_TIMER + " joueurs prêts restants, annulation du compte à rebours.");
+                if (playerCountInLobby < MIN_PLAYERS_TO_START_TIMER) {
+                    System.out.println("Moins de " + MIN_PLAYERS_TO_START_TIMER + " joueurs prêts restants dans le lobby, annulation du compte à rebours.");
                     cancelLobbyCountdown();
                 }
             }
             broadcastLobbyState(); 
+            if(client.isNameSet()) { 
+                handleChatMessage(client, "[A quitté le chat]");
+            }
+        } else {
+            System.out.println("Client " + client.getNomJoueur() + " non trouvé dans les listes actives (peut-être déjà retiré).");
         }
     }
 
     public synchronized void handleChatMessage(ClientHandler sender, String message) {
         if (sender.isNameSet() && !message.trim().isEmpty()) {
             System.out.println("CHAT [" + sender.getNomJoueur() + "]: " + message);
-            // Diffuser le message de chat à TOUS les clients connectés (joueurs et spectateurs)
             broadcast("NEW_CHAT_MSG:" + sender.getNomJoueur() + ":" + message);
         } else if (!sender.isNameSet()){
             sender.sendMessage("ERROR:Vous devez définir votre nom pour envoyer des messages dans le chat.");
         }
     }
-    
+
     private synchronized void resetServerForNewLobby() {
         System.out.println("Réinitialisation du serveur pour un nouveau lobby.");
-        game = null;
+        game = null; 
         gameInProgressFlag = false;
         cancelLobbyCountdown();
-        
-        playersInGame.clear(); 
+        playersInGame.clear();
 
-        List<ClientHandler> clientsEncoreConnectes = new ArrayList<>();
-        synchronized(connectedClients) { 
-            clientsEncoreConnectes.addAll(connectedClients);
+        List<ClientHandler> clientsASynchroniser;
+        synchronized (connectedClients) {
+            clientsASynchroniser = new ArrayList<>(connectedClients);
         }
 
-        for (ClientHandler ch : clientsEncoreConnectes) {
+        for (ClientHandler ch : clientsASynchroniser) {
             if (ch.isSocketActive()) {
-                ch.resetForNewLobby(); 
+                ch.resetForNewLobby();
                 ch.sendMessage("REQ_NAME"); 
-            } else {
-                // Si le socket n'est plus actif, le retirer de connectedClients
-                // Cela devrait déjà être géré par le finally du ClientHandler, mais double sécurité.
-                connectedClients.remove(ch); // Attention ConcurrentModification si on itère sur connectedClients directement
-                System.out.println("Client " + ch.getNomJoueur() + " (socket inactif) complètement retiré lors du reset.");
             }
         }
-        
-        if (connectedClients.isEmpty()) {
-             System.out.println("Aucun client actif restant. En attente de nouvelles connexions.");
-        } else {
-            System.out.println(connectedClients.size() + " clients potentiels pour le nouveau lobby (doivent redonner leur nom).");
+        synchronized (connectedClients) { 
+            if (connectedClients.isEmpty()) {
+                 System.out.println("Aucun client actif restant après reset. En attente de nouvelles connexions.");
+            } else {
+                System.out.println(connectedClients.size() + " clients potentiels pour le nouveau lobby (doivent redonner leur nom).");
+            }
         }
-        broadcastLobbyState();
+        broadcastLobbyState(); 
     }
-
-
-    private void broadcast(String message) { // Diffuse à TOUS les clients connectés
+    
+    private void broadcast(String message) {
         List<ClientHandler> clientsSnapshot;
         synchronized (connectedClients) {
             clientsSnapshot = new ArrayList<>(connectedClients);
@@ -578,12 +627,12 @@ public class BatailleNavaleServer {
         }
     }
 
-    private void broadcastToAllParticipants(String message) { // Joueurs en jeu ET spectateurs
+    private void broadcastToAllParticipants(String message) { 
         List<ClientHandler> participants = new ArrayList<>();
-        synchronized(playersInGame) {
+        synchronized(playersInGame) { 
             participants.addAll(playersInGame);
         }
-        synchronized(connectedClients) {
+        synchronized(connectedClients) { 
             for(ClientHandler ch : connectedClients) {
                 if(ch.getRole() == ClientHandler.ClientRole.SPECTATOR && !participants.contains(ch)) {
                     participants.add(ch);
@@ -594,7 +643,6 @@ public class BatailleNavaleServer {
             if (participant != null && participant.isSocketActive()) participant.sendMessage(message);
         }
     }
-
 
     private void broadcastSaufAUnJoueurEnPartie(ClientHandler exclure, String message) {
         List<ClientHandler> gamePlayersSnapshot;
@@ -610,15 +658,12 @@ public class BatailleNavaleServer {
     
     private ClientHandler getClientHandlerByGlobalIndexInGame(int globalGameIndex) {
         synchronized(playersInGame) {
-            // L'index de jeu est maintenant l'index dans la liste playersInGame
-            if (globalGameIndex >= 0 && globalGameIndex < playersInGame.size()) {
-                 // On s'attend à ce que playerIndex du ClientHandler soit aussi cet index global de jeu
-                 for(ClientHandler ch : playersInGame){
-                     if(ch.getPlayerIndex() == globalGameIndex) return ch;
+            for(ClientHandler ch : playersInGame){
+                 if(ch.getPlayerIndex() == globalGameIndex && ch.getRole() == ClientHandler.ClientRole.PLAYER_IN_GAME) {
+                     return ch;
                  }
             }
         }
-        System.err.println("getClientHandlerByGlobalIndexInGame: Aucun client trouvé pour l'index de jeu " + globalGameIndex);
         return null;
     }
     
@@ -638,7 +683,6 @@ public class BatailleNavaleServer {
             long nombreDeNomsDefinisDansLobby = connectedClients.stream()
                                              .filter(ch -> ch.isNameSet() && ch.getRole() == ClientHandler.ClientRole.PLAYER_IN_LOBBY)
                                              .count();
-            // LOBBY_STATE:nbNomsDefinisPourJeu:minPourDemarrerTimer:maxJoueursPourJeu:nomsDesJoueursAvecNomPourJeu
             broadcast("LOBBY_STATE:" + nombreDeNomsDefinisDansLobby + ":" + MIN_PLAYERS_TO_START_TIMER + ":" + MAX_PLAYERS_ALLOWED + ":" + nomsJoueursDansLobbyAyantNom);
         }
     }
@@ -648,99 +692,114 @@ public class BatailleNavaleServer {
         server.startServer();
     }
 
-    // --- Classe interne ClientHandler ---
-    class ClientHandler implements Runnable {
+    static class ClientHandler implements Runnable {
         enum ClientRole { PLAYER_IN_LOBBY, PLAYER_IN_GAME, SPECTATOR }
 
         private Socket clientSocket;
         private BatailleNavaleServer server;
         private PrintWriter out;
         private BufferedReader in;
-        private String nomJoueur = "JoueurAnonyme"; 
-        private int playerIndex = -1; // Index dans la partie (0 à N-1), ou -1 si pas encore en jeu/spectateur
-        private boolean nameIsSet = false; 
-        private ClientRole role = ClientRole.PLAYER_IN_LOBBY; // Rôle initial
+        private String nomJoueur = "JoueurAnonyme";
+        private int playerIndex = -1;
+        private boolean nameIsSet = false;
+        private ClientRole role = ClientRole.PLAYER_IN_LOBBY;
 
-        public ClientHandler(Socket socket, BatailleNavaleServer server) { // Retrait de tempLobbyIndex
+        public ClientHandler(Socket socket, BatailleNavaleServer server) {
             this.clientSocket = socket;
             this.server = server;
             try {
                 out = new PrintWriter(clientSocket.getOutputStream(), true);
                 in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-                out.println("REQ_NAME"); 
             } catch (IOException e) {
                 System.err.println("Erreur I/O pour ClientHandler: " + e.getMessage());
+                try {
+                    if (clientSocket != null && !clientSocket.isClosed()) clientSocket.close();
+                } catch (IOException ex) { /* Ignored */ }
             }
         }
 
-        public String getNomJoueur() {
-            return nomJoueur;
-        }
-        
-        public boolean isNameSet() { 
-            return nameIsSet;
-        }
-        
-        public void setPlayerIndex(int index) { 
-            this.playerIndex = index;
-        }
-        
-        public int getPlayerIndex() {
-            return playerIndex;
-        }
-
+        public String getNomJoueur() { return nomJoueur; }
+        public boolean isNameSet() { return nameIsSet; }
+        public void setPlayerIndex(int index) { this.playerIndex = index; }
+        public int getPlayerIndex() { return playerIndex; }
         public ClientRole getRole() { return role; }
         public void setRole(ClientRole role) { this.role = role; }
-        
         public boolean isSocketActive() {
             return clientSocket != null && !clientSocket.isClosed() && clientSocket.isConnected() && out != null && !out.checkError();
         }
-        
         public void resetForNewLobby() {
             this.nameIsSet = false;
-            this.playerIndex = -1; 
-            this.role = ClientRole.PLAYER_IN_LOBBY; // Réinitialiser au rôle de lobby
+            this.playerIndex = -1;
+            this.role = ClientRole.PLAYER_IN_LOBBY;
         }
-
 
         @Override
         public void run() {
             try {
+                synchronized(server) { // S'assurer que le rôle initial est bien géré par rapport à l'état du serveur
+                    if (server.gameInProgressFlag && server.game != null && server.game.getPhaseActuelle() != BatailleNavaleGame.GamePhase.TERMINE) {
+                        if (this.role != ClientRole.SPECTATOR) { // Si pas déjà mis en spectateur par startServer (ex: reconnexion rapide)
+                             this.role = ClientRole.SPECTATOR;
+                             System.out.println("ClientHandler pour " + clientSocket.getRemoteSocketAddress() + " passe en mode SPECTATOR (jeu en cours).");
+                        }
+                    } else {
+                        if (this.role != ClientRole.PLAYER_IN_LOBBY) { // Si pas déjà en lobby (ex: jeu vient de finir)
+                            this.role = ClientRole.PLAYER_IN_LOBBY;
+                            System.out.println("ClientHandler pour " + clientSocket.getRemoteSocketAddress() + " passe en mode PLAYER_IN_LOBBY.");
+                        }
+                    }
+                }
+
+
+                if (!nameIsSet) { // Si le nom n'a pas encore été défini par le client
+                     sendMessage("REQ_NAME");
+                }
+
+
                 String messageClient;
                 while (isSocketActive() && (messageClient = in.readLine()) != null) {
-                    System.out.println("Reçu de " + nomJoueur + " (rôle " + role + ", idx " + playerIndex + ", nameSet: "+nameIsSet+"): " + messageClient);
+                    System.out.println("Reçu de " + (nameIsSet ? nomJoueur : clientSocket.getRemoteSocketAddress()) + " (rôle " + role + ", idx " + playerIndex + ", nameSet: "+nameIsSet+"): " + messageClient);
                     String[] parts = messageClient.split(":", 2);
                     String command = parts[0].toUpperCase();
                     String payload = (parts.length > 1) ? parts[1] : "";
 
-                    switch (command) {
-                        case "SET_NAME":
-                            if (!payload.isEmpty()) {
-                                boolean nameTaken = false;
-                                synchronized(server.connectedClients) { 
-                                    for(ClientHandler ch : server.connectedClients) {
-                                        if (ch != this && ch.isNameSet() && ch.getNomJoueur().equalsIgnoreCase(payload)) {
-                                            nameTaken = true;
-                                            break;
-                                        }
+                    if (command.equals("SET_NAME")) {
+                        String potentialName = payload.trim();
+                        if (!potentialName.isEmpty() && potentialName.length() <= 15) {
+                            boolean nameTaken = false;
+                            synchronized(server.connectedClients) {
+                                for(ClientHandler ch : server.connectedClients) {
+                                    if (ch != this && ch.isNameSet() && ch.getNomJoueur().equalsIgnoreCase(potentialName)) {
+                                        nameTaken = true;
+                                        break;
                                     }
                                 }
-                                if (nameTaken) {
-                                    sendMessage("ERROR:Ce nom est déjà utilisé. Veuillez en choisir un autre.");
-                                    this.nameIsSet = false; 
-                                } else {
-                                    this.nomJoueur = payload;
-                                    this.nameIsSet = true; 
-                                    System.out.println("Client (socket: "+clientSocket.getPort()+") s'appelle maintenant " + this.nomJoueur);
-                                    server.playerHasSetName(this); 
-                                }
-                            } else {
-                                sendMessage("ERROR:Le nom ne peut pas être vide.");
                             }
-                            break;
+                            if (nameTaken) {
+                                sendMessage("ERROR:Ce nom est déjà utilisé. Veuillez en choisir un autre.");
+                                sendMessage("REQ_NAME"); 
+                            } else {
+                                this.nomJoueur = potentialName;
+                                this.nameIsSet = true;
+                                System.out.println("Client (socket: "+clientSocket.getPort()+") s'appelle maintenant " + this.nomJoueur);
+                                server.playerHasSetName(this);
+                            }
+                        } else {
+                            sendMessage("ERROR:Le nom ne peut pas être vide et doit faire 15 caractères max.");
+                            if (!nameIsSet) sendMessage("REQ_NAME");
+                        }
+                        continue;
+                    }
+
+                    if (!nameIsSet && !command.equals("QUIT_GAME")) { 
+                        sendMessage("ERROR:Veuillez d'abord définir votre nom avec SET_NAME:votreNom.");
+                        sendMessage("REQ_NAME"); 
+                        continue;
+                    }
+
+                    switch (command) {
                         case "PLACE_SHIP":
                             if (role != ClientRole.PLAYER_IN_GAME) { sendMessage("ERROR:Action non autorisée pour votre rôle."); break;}
-                            if (!nameIsSet) { sendMessage("ERROR:Veuillez d'abord définir votre nom."); break; }
                             String[] placementArgs = payload.split(":");
                             if (placementArgs.length == 4) {
                                 try {
@@ -758,9 +817,8 @@ public class BatailleNavaleServer {
                             break;
                         case "FIRE_SHOT":
                             if (role != ClientRole.PLAYER_IN_GAME) { sendMessage("ERROR:Action non autorisée pour votre rôle."); break;}
-                            if (!nameIsSet) { sendMessage("ERROR:Veuillez d'abord définir votre nom."); break; }
                             String[] tirArgs = payload.split(":");
-                            if (tirArgs.length == 3) { 
+                            if (tirArgs.length == 3) {
                                 try {
                                     int targetIdx = Integer.parseInt(tirArgs[0]);
                                     int ligne = Integer.parseInt(tirArgs[1]);
@@ -773,17 +831,15 @@ public class BatailleNavaleServer {
                                 sendMessage("ERROR:Commande FIRE_SHOT malformée (attendu: FIRE_SHOT:targetIdx:ligne:col).");
                             }
                             break;
-                        case "ADMIN_START_GAME": 
+                        case "ADMIN_START_GAME":
                             if (role != ClientRole.PLAYER_IN_LOBBY) { sendMessage("ERROR:Action non autorisée pour votre rôle."); break;}
-                            if (!nameIsSet) { sendMessage("ERROR:Veuillez d'abord définir votre nom."); break; }
                             server.handleAdminStartGame(this);
                             break;
-                        case "QUIT_GAME": // Géré par le client, le serveur le traite via handleClientQuitte
-                            System.out.println("Client " + nomJoueur + " a envoyé QUIT_GAME. Fermeture de la connexion pour ce client.");
-                            try { clientSocket.close(); } catch (IOException ignored) {}
+                        case "QUIT_GAME":
+                            System.out.println("Client " + nomJoueur + " a envoyé QUIT_GAME.");
+                            try { if(clientSocket != null && !clientSocket.isClosed()) clientSocket.close(); } catch (IOException ignored) {}
                             return; 
-                        case "CHAT_MSG": 
-                            if (!nameIsSet) { sendMessage("ERROR:Veuillez d'abord définir votre nom pour chatter."); break; }
+                        case "CHAT_MSG":
                             if (!payload.isEmpty()) {
                                 server.handleChatMessage(this, payload);
                             }
@@ -795,28 +851,28 @@ public class BatailleNavaleServer {
                 }
             } catch (IOException e) {
                 if (isSocketActive()){
-                    System.out.println("Déconnexion de " + nomJoueur + " (rôle " + role + ", nameSet: "+nameIsSet+"): " + e.getMessage());
-                } else {
-                    // System.out.println("Client " + nomJoueur + " (nameSet: "+nameIsSet+") déjà déconnecté ou socket fermé, erreur de lecture ignorée.");
+                    System.out.println("Déconnexion (IOException) de " + (nameIsSet ? nomJoueur : clientSocket.getRemoteSocketAddress()) + ": " + e.getMessage());
                 }
-            } finally {
-                server.handleClientQuitte(this);
+            } catch (Exception e) {
+                System.err.println("Exception inattendue dans ClientHandler pour " + (nameIsSet ? nomJoueur : clientSocket.getRemoteSocketAddress()) + ": " + e.getMessage());
+                e.printStackTrace();
+            }
+            finally {
+                server.handleClientQuitte(this); 
                 try {
                     if (in != null) in.close();
                     if (out != null) out.close();
                     if (clientSocket != null && !clientSocket.isClosed()) clientSocket.close();
-                } catch (IOException e) {
-                    // System.err.println("Erreur à la fermeture des ressources du ClientHandler: " + e.getMessage());
-                }
+                } catch (IOException e) { /* Ignored */ }
+                System.out.println("Fin du thread pour le client: " + (nameIsSet ? nomJoueur : "Socket " + clientSocket.getRemoteSocketAddress()));
             }
         }
 
         public void sendMessage(String message) {
             if (isSocketActive()) {
                 out.println(message);
-            } else {
-                // System.err.println("Impossible d'envoyer un message à " + nomJoueur + ", flux fermé ou socket fermé.");
             }
         }
     }
+    // --- FIN DU CODE A REPRENDRE ---
 }

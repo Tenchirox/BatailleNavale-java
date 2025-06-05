@@ -31,14 +31,15 @@ public class Ship {
     }
 
     private final ShipType type;
-    private final List<Point> positions; // Coordonnées de chaque segment du navire
-    private final boolean[] hits; // Indique si un segment du navire est touché
+    private final List<Point> positions;
+    private final boolean[] hits;
     private boolean estHorizontal;
+    private boolean explicitementCoule = false; // Pour le cas d'abandon
 
     public Ship(ShipType type) {
         this.type = type;
         this.positions = new ArrayList<>();
-        this.hits = new boolean[type.getTaille()];
+        this.hits = new boolean[type.getTaille()]; // Initialisé à false par défaut
     }
 
     public ShipType getType() {
@@ -50,16 +51,19 @@ public class Ship {
     }
 
     public List<Point> getPositions() {
-        return positions;
+        return new ArrayList<>(positions); // Retourner une copie
     }
 
-    public void addPosition(int x, int y) {
+    public void addPosition(int x, int y) { // Utilisé pendant la construction initiale, pas par le jeu principal
         this.positions.add(new Point(x, y));
     }
-    
+
     public void setPositions(List<Point> positions) {
         this.positions.clear();
         this.positions.addAll(positions);
+        // S'assurer que `hits` est réinitialisé si les positions changent après l'initialisation
+        // (normalement, les positions sont fixées une fois pour toutes).
+        // Arrays.fill(this.hits, false); // Déjà fait par la taille fixe dans le constructeur.
     }
 
     public boolean isEstHorizontal() {
@@ -70,34 +74,46 @@ public class Ship {
         this.estHorizontal = estHorizontal;
     }
 
-    /**
-     * Enregistre un tir sur le navire.
-     * @param shotPosition La position du tir.
-     * @return true si le tir a touché une nouvelle partie du navire, false sinon (déjà touché ou manqué).
-     */
     public boolean registerHit(Point shotPosition) {
+        if (explicitementCoule) return false; // Si déjà marqué comme coulé par abandon, ne pas enregistrer de nouveaux tirs
+
         for (int i = 0; i < positions.size(); i++) {
             if (positions.get(i).equals(shotPosition)) {
-                if (!hits[i]) { // Si cette partie n'était pas encore touchée
+                if (!hits[i]) {
                     hits[i] = true;
-                    return true;
+                    return true; // Touché pour la première fois à cet endroit
                 }
                 return false; // Déjà touché à cet endroit
             }
         }
-        return false; // Le tir n'est pas sur ce navire (ne devrait pas arriver si la logique est correcte)
+        return false; // Le tir n'est pas sur ce navire (ne devrait pas arriver si la logique de PlayerBoard est correcte)
     }
 
     public boolean estCoule() {
+        if (explicitementCoule) return true;
+        if (positions.isEmpty() && type.getTaille() > 0) return false; // Pas de positions, pas encore placé, donc pas coulé.
+        if (type.getTaille() == 0) return true; // Navire de taille 0 est toujours "coulé".
+
         for (boolean hit : hits) {
             if (!hit) {
-                return false;
+                return false; // Au moins un segment n'est pas touché
             }
         }
-        return true;
+        // Si tous les segments sont dans `hits` et sont `true`, et qu'il y a bien des positions
+        return !positions.isEmpty(); // Vrai seulement si tous les segments sont touchés ET le navire a été positionné.
     }
 
+    public void marquerCommeCouleSiAbandon() {
+        this.explicitementCoule = true;
+        // Optionnellement, marquer tous les segments comme touchés si la logique externe en dépend.
+        // for (int i = 0; i < hits.length; i++) {
+        //     hits[i] = true;
+        // }
+    }
+
+
     public int getNombreTouchees() {
+        if (explicitementCoule) return type.getTaille();
         int count = 0;
         for (boolean hit : hits) {
             if (hit) count++;
@@ -107,7 +123,7 @@ public class Ship {
 
     @Override
     public String toString() {
-        return type.getNom() + " (taille " + type.getTaille() + ")";
+        return type.getNom() + " (taille " + type.getTaille() + ", positions: " + positions.size() + ", touches: " + getNombreTouchees() + (estCoule() ? " COULÉ" : "") + ")";
     }
 
     @Override
@@ -115,11 +131,13 @@ public class Ship {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Ship ship = (Ship) o;
-        return type == ship.type && Objects.equals(positions, ship.positions); // Simplifié, pourrait nécessiter une comparaison plus profonde
+        // Comparaison basée sur le type et les positions initiales peut suffire si les navires sont uniques par type sur un plateau.
+        // Si plusieurs navires du même type sont possibles, un ID unique serait nécessaire.
+        return type == ship.type && Objects.equals(positions, ship.positions) && estHorizontal == ship.estHorizontal;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(type, positions);
+        return Objects.hash(type, positions, estHorizontal);
     }
 }
