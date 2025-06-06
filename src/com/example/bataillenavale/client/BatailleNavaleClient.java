@@ -63,7 +63,7 @@ public class BatailleNavaleClient extends JFrame {
 
     // État du jeu
     private String serverAddress = "192.168.3.86";
-    private int serverPort = 12350;
+    private int serverPort = 12351;
     private String playerName = "Joueur";
     private int playerIndex = -1;
     private boolean myTurn = false;
