@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bataille Navale</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div id="connection-view" class="view">
+            <h2>Connexion</h2>
+            <div>
+                <label for="server-ip">Serveur IP (WebSocket URL, e.g., ws://192.168.3.86:12349):</label>
+                <input type="text" id="server-ip" value="ws://192.168.3.86:12349">
+            </div>
+            <div>
+                <label for="player-name">Votre Nom (max 15 car.):</label>
+                <input type="text" id="player-name" value="Joueur" maxlength="15">
+            </div>
+            <button id="connect-button">Se Connecter et Rejoindre</button>
+        </div>
+
+        <div id="main-game-area" class="view" style="display: none;">
+            <div id="lobby-view" class="sub-view">
+                <h2>Lobby</h2>
+                <textarea id="lobby-area" rows="8" readonly></textarea>
+                <button id="host-start-game-button" style="display: none;">Démarrer la Partie (Hôte)</button>
+            </div>
+
+            <div id="game-content-view" class="sub-view" style="display: none;">
+                <div id="placement-controls" style="display: none;">
+                    <h3>Placement des Navires</h3>
+                    <label id="ship-to-place-label">Navire à placer:</label>
+                    <input type="radio" id="horizontal-radio" name="orientation" value="horizontal" checked>
+                    <label for="horizontal-radio">Horizontal</label>
+                    <input type="radio" id="vertical-radio" name="orientation" value="vertical">
+                    <label for="vertical-radio">Vertical</label>
+                </div>
+
+                <div id="grids-container">
+                    </div>
+            </div>
+            <button id="quit-game-button" style="display: none;">Quitter</button>
+        </div>
+
+        <div id="east-side-panel" style="display: none;">
+            <div id="chat-ui">
+                <h3>Chat</h3>
+                <div id="chat-display-area"></div>
+                <input type="text" id="chat-input-field" placeholder="Votre message...">
+                <button id="send-chat-button">Envoyer</button>
+            </div>
+            <div id="game-log-ui">
+                <h3>Log de la Partie</h3>
+                <div id="game-log-area"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="status-bar">
+        Bienvenue! Entrez l'URL du serveur WebSocket, votre nom, et connectez-vous.
+    </div>
+
+    <script src="client.js"></script>
+</body>
+</html>

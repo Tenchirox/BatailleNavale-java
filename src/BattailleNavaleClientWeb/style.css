@@ -1,0 +1,134 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 10px;
+    background-color: #f0f0f0;
+    display: flex;
+    flex-direction: column;
+    min-height: 95vh;
+}
+
+.container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    flex-grow: 1;
+}
+
+.view, .sub-view {
+    padding: 15px;
+    background-color: white;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+}
+
+#connection-view, #main-game-area {
+    flex-basis: 60%; /* Main content area */
+    min-width: 400px;
+}
+#main-game-area {
+    display: flex;
+    flex-direction: column;
+}
+
+#east-side-panel {
+    flex-basis: 35%; /* Chat and log area */
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 250px;
+}
+
+#chat-ui, #game-log-ui {
+    background-color: #fff;
+    border: 1px solid #ddd;
+    padding: 10px;
+    border-radius: 4px;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+#chat-display-area, #game-log-area {
+    height: 150px; /* Adjust as needed */
+    overflow-y: auto;
+    border: 1px solid #eee;
+    padding: 5px;
+    margin-bottom: 5px;
+    white-space: pre-wrap; /* To respect newlines */
+    word-wrap: break-word;
+}
+
+#grids-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.grid-panel-wrapper {
+    border: 1px solid #ccc;
+    padding: 5px;
+}
+
+.grid-panel {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr); /* Assuming 10x10 grid */
+    grid-template-rows: repeat(10, 1fr);
+    border: 1px solid #999;
+    gap: 1px; /* Cell spacing */
+}
+
+.grid-cell {
+    width: 30px; /* Adjust cell size */
+    height: 30px;
+    background-color: #6fa8dc; /* Default water color */
+    border: 1px solid #add8e6; /* Light blue border for cells */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.grid-cell:hover {
+    filter: brightness(0.9);
+}
+.grid-cell.disabled {
+    cursor: not-allowed;
+    filter: grayscale(0.5);
+}
+
+/* Cell states */
+.grid-cell.ship { background-color: #555; color: white; } /* Player's own ship segment */
+.grid-cell.hit { background-color: orange; }
+.grid-cell.miss { background-color: #eee; }
+.grid-cell.sunk { background-color: red; color: white; }
+.grid-cell.my-hit-on-me { background-color: #ff69b4; } /* Pink for hit on my ship */
+.grid-cell.my-miss-on-me { background-color: #skyblue; } /* Brighter blue for miss on my sea (already shot by opponent) */
+.grid-cell.preview-valid { background-color: rgba(100, 100, 100, 0.7); }
+.grid-cell.preview-invalid { background-color: rgba(255, 0, 0, 0.7); }
+.grid-cell.opponent-left { background-color: #b0b0b0; color: #333; text-decoration: line-through; }
+
+
+#status-bar {
+    margin-top: 10px;
+    padding: 10px;
+    background-color: #333;
+    color: white;
+    text-align: center;
+    border-radius: 3px;
+}
+
+button {
+    padding: 8px 12px;
+    margin-top: 5px;
+    cursor: pointer;
+}
+input[type="text"], textarea {
+    padding: 8px;
+    margin-top: 5px;
+    width: calc(100% - 20px); /* Adjust for padding */
+    box-sizing: border-box;
+}
+textarea { resize: vertical; }

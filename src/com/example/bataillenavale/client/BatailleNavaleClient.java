@@ -27,7 +27,7 @@ public class BatailleNavaleClient extends JFrame {
         }
         public enum ShotResult { MANQUE, TOUCHE, COULE, DEJA_JOUE, ERREUR }
         public static final int TAILLE_GRILLE = 10;
-        public static final char OPP_UNKNOWN = ' '; public static final char OPP_MISS = 'O';
+        public static final char OPP_UNKNOWN = ' '; public static final char OPP_MISS = 'M';
         public static final char OPP_HIT = 'X'; public static final char OPP_SUNK = '!';
         public static final char MY_EMPTY = ' '; public static final char MY_HIT_ON_ME = 'X';
         public static final char MY_MISS_ON_ME = 'M';
@@ -62,8 +62,8 @@ public class BatailleNavaleClient extends JFrame {
     private JLabel shipToPlaceLabel;
 
     // État du jeu
-    private String serverAddress = "127.0.0.1";
-    private int serverPort = 12347;
+    private String serverAddress = "192.168.3.86";
+    private int serverPort = 12350;
     private String playerName = "Joueur";
     private int playerIndex = -1;
     private boolean myTurn = false;
