@@ -6,7 +6,7 @@ Comment jouer ?
 Le plus simple en locale et d'utiliser la version Java :
 java -jar BatailleNavaleServer-v0.4(compatible-web).jar pour lancer le serveur et le client qui va avec BatailleNavaleClient-v0.4(compatible-web).jar
 
-Puis lancer le client (le double clic doit fonctionner si java est correctement lancé)
+Puis lancer le client (le double clic doit fonctionner si java est correctement installé, sinon se placer dans le repertoire java puis java -jar BatailleNavaleClient-v0.4(compatible-web).jar).
 
 Pour la version web n'importe quel serveur http fera l'affaire ou meme juste ouvrir le index.html dans votre navigateur.
 
