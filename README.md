@@ -16,6 +16,7 @@ node BatailleNavaleServer-node.js
 
 Le cliet lourd java est également disponible avec le serveur node BatailleNavaleClient-v0.4(compatible-web-nodeJs).jar
 
+Le client web utilise une connection websocket et le client lourd passe directement en tcp, les clients web et lourds peuvent jouer enssemble.
 
 
 
